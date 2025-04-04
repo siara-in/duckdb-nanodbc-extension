@@ -40,7 +40,7 @@ static void LoadInternal(DatabaseInstance &db) {
                               LogicalType::BOOLEAN, Value::BOOLEAN(false), SetODBCDebugQueryPrint);
 }
 
-void ODBCScannerExtension::Load(DuckDB &db) {
+void OdbcExtension::Load(DuckDB &db) {
     LoadInternal(*db.instance);
 }
 

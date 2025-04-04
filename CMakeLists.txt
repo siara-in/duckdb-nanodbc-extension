@@ -9,6 +9,25 @@ set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 project(${TARGET_NAME})
 include_directories(src/include)
 
+# Find ODBC
+if(WIN32)
+  # Windows ODBC is included in the SDK
+  set(ODBC_LIBRARIES odbc32)
+else()
+  find_package(ODBC REQUIRED)
+  include_directories(${ODBC_INCLUDE_DIRS})
+  
+  # Some systems require explicitly finding the odbc library
+  find_library(ODBC_LIBRARY NAMES odbc)
+  if(NOT ODBC_LIBRARY)
+    message(FATAL_ERROR "ODBC library not found. Install unixodbc-dev (Debian/Ubuntu) or equivalent.")
+  endif()
+  
+  # Add both ODBC_LIBRARIES and ODBC_LIBRARY to ensure comprehensive linkage
+  set(ODBC_LIBRARIES ${ODBC_LIBRARIES} ${ODBC_LIBRARY})
+  message(STATUS "Found ODBC libraries: ${ODBC_LIBRARIES}")
+endif()
+
 set(EXTENSION_SOURCES 
     src/odbc_db.cpp
     src/odbc_stmt.cpp

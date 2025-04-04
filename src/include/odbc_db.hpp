@@ -74,6 +74,9 @@ private:
     bool owner;
 
     void CheckError(SQLRETURN ret, SQLSMALLINT handle_type, SQLHANDLE handle, const std::string &operation);
+
+public:
+    // Get error message from ODBC
     static std::string GetErrorMessage(SQLSMALLINT handle_type, SQLHANDLE handle);
 };
 

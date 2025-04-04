@@ -4,7 +4,7 @@
 
 namespace duckdb {
 
-class ODBCScannerExtension : public Extension {
+class OdbcExtension : public Extension {
 public:
     void Load(DuckDB &db) override;
     std::string Name() override {

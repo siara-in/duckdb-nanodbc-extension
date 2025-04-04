@@ -52,6 +52,9 @@ public:
     template <typename T>
     T GetValue(idx_t col);
     
+    // Get length/indicator value
+    SQLLEN GetValueLength(idx_t col);
+    
     // Bind parameter
     template <typename T>
     void Bind(idx_t col, T value);

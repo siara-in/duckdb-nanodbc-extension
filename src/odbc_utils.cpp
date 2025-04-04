@@ -88,7 +88,9 @@ SQLSMALLINT ODBCUtils::ToODBCType(const LogicalType &input) {
 LogicalType ODBCUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits) {
     switch (odbc_type) {
         case SQL_BIT:
+#ifdef SQL_BOOLEAN
         case SQL_BOOLEAN:
+#endif
             return LogicalType::BOOLEAN;
             
         case SQL_TINYINT:

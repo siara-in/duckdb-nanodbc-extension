@@ -3,6 +3,7 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/timestamp.hpp"
+#include "duckdb/common/types/time.hpp"
 #include "duckdb/storage/statistics/base_statistics.hpp"
 #include "duckdb/main/database_manager.hpp"
 #include "duckdb/main/attached_database.hpp"
@@ -78,7 +79,7 @@ static unique_ptr<FunctionData> ODBCBind(ClientContext &context, TableFunctionBi
     
     // Get table information
     ColumnList columns;
-    vector<unique_ptr<Constraint>> constraints;
+    std::vector<std::unique_ptr<Constraint>> constraints;
     db.GetTableInfo(result->table_name, columns, constraints, result->all_varchar);
     
     // Map column types and names

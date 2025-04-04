@@ -2,6 +2,9 @@
 #include "odbc_db.hpp"
 #include "odbc_utils.hpp"
 #include "odbc_scanner.hpp"
+#include "duckdb/common/types/date.hpp"
+#include "duckdb/common/types/timestamp.hpp"
+#include "duckdb/common/types/time.hpp"
 
 namespace duckdb {
 
@@ -108,39 +111,41 @@ int ODBCStatement::GetType(idx_t col) {
         case SQL_CHAR:
         case SQL_VARCHAR:
         case SQL_LONGVARCHAR:
-            return LogicalTypeId::VARCHAR;
+            return (int)LogicalTypeId::VARCHAR;
         case SQL_WCHAR:
         case SQL_WVARCHAR:
         case SQL_WLONGVARCHAR:
-            return LogicalTypeId::VARCHAR;
+            return (int)LogicalTypeId::VARCHAR;
         case SQL_BINARY:
         case SQL_VARBINARY:
         case SQL_LONGVARBINARY:
-            return LogicalTypeId::BLOB;
+            return (int)LogicalTypeId::BLOB;
         case SQL_SMALLINT:
         case SQL_INTEGER:
         case SQL_TINYINT:
-            return LogicalTypeId::INTEGER;
+            return (int)LogicalTypeId::INTEGER;
         case SQL_BIGINT:
-            return LogicalTypeId::BIGINT;
+            return (int)LogicalTypeId::BIGINT;
         case SQL_REAL:
         case SQL_FLOAT:
         case SQL_DOUBLE:
-            return LogicalTypeId::DOUBLE;
+            return (int)LogicalTypeId::DOUBLE;
         case SQL_DECIMAL:
         case SQL_NUMERIC:
-            return LogicalTypeId::DECIMAL;
+            return (int)LogicalTypeId::DECIMAL;
         case SQL_BIT:
+#ifdef SQL_BOOLEAN
         case SQL_BOOLEAN:
-            return LogicalTypeId::BOOLEAN;
+#endif
+            return (int)LogicalTypeId::BOOLEAN;
         case SQL_DATE:
-            return LogicalTypeId::DATE;
+            return (int)LogicalTypeId::DATE;
         case SQL_TIME:
-            return LogicalTypeId::TIME;
+            return (int)LogicalTypeId::TIME;
         case SQL_TIMESTAMP:
-            return LogicalTypeId::TIMESTAMP;
+            return (int)LogicalTypeId::TIMESTAMP;
         default:
-            return LogicalTypeId::VARCHAR;
+            return (int)LogicalTypeId::VARCHAR;
     }
 }
 
@@ -272,7 +277,7 @@ double ODBCStatement::GetValue(idx_t col) {
 }
 
 template <>
-sql_timestamp ODBCStatement::GetValue(idx_t col) {
+timestamp_t ODBCStatement::GetValue(idx_t col) {
     if (!hstmt) {
         throw std::runtime_error("Statement is not open");
     }
@@ -288,17 +293,17 @@ sql_timestamp ODBCStatement::GetValue(idx_t col) {
     }
     
     if (indicator == SQL_NULL_DATA) {
-        return sql_timestamp();
+        // Return epoch for null
+        return Timestamp::FromEpochSeconds(0);
     }
     
     // Convert SQL_TIMESTAMP_STRUCT to duckdb timestamp
-    date_t date(ts.year, ts.month, ts.day);
-    time_t time(ts.hour, ts.minute, ts.second, ts.fraction / 1000000);
-    return sql_timestamp(date, time);
+    date_t date = Date::FromDate(ts.year, ts.month, ts.day);
+    dtime_t time = Time::FromTime(ts.hour, ts.minute, ts.second, ts.fraction / 1000000);
+    return Timestamp::FromDatetime(date, time);
 }
 
-template <>
-SQLLEN ODBCStatement::GetValue(idx_t col) {
+SQLLEN ODBCStatement::GetValueLength(idx_t col) {
     if (!hstmt) {
         throw std::runtime_error("Statement is not open");
     }
