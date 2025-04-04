@@ -144,3 +144,27 @@ Now to fix your project path go to `tools->CMake->Change Project Root`([docs](ht
 To set up debugging in CLion, there are two simple steps required. Firstly, in `CLion -> Settings / Preferences -> Build, Execution, Deploy -> CMake` you will need to add the desired builds (e.g. Debug, Release, RelDebug, etc). There's different ways to configure this, but the easiest is to leave all empty, except the `build path`, which needs to be set to `../build/{build type}`. Now on a clean repository you will first need to run `make {build type}` to initialize the CMake build directory. After running make, you will be able to (re)build from CLion by using the build target we just created. If you use the CLion editor, you can create a CLion CMake profiles matching the CMake variables that are described in the makefile, and then you don't need to invoke the Makefile.
 
 The second step is to configure the unittest runner as a run/debug configuration. To do this, go to `Run -> Edit Configurations` and click `+ -> Cmake Application`. The target and executable should be `unittest`. This will run all the DuckDB tests. To specify only running the extension specific tests, add `--test-dir ../../.. [sql]` to the `Program Arguments`. Note that it is recommended to use the `unittest` executable for testing/development within CLion. The actual DuckDB CLI currently does not reliably work as a run target in CLion.
+
+## Running
+```sql
+-- Query a table using a pre-configured DSN
+SELECT * FROM odbc_scan('customers', 'MyODBCDSN');
+
+-- Query a table with username and password
+SELECT * FROM odbc_scan('orders', 'MyODBCDSN', 'username', 'password');
+
+-- Use a direct connection string
+SELECT * FROM odbc_scan('products', 'Driver={SQL Server};Server=myserver;Database=mydatabase;Trusted_Connection=yes;');
+
+-- Treat all columns as VARCHAR (useful for complex types)
+SELECT * FROM odbc_scan('complex_table', 'MyODBCDSN', all_varchar=true);
+
+-- Execute a custom SQL query against an ODBC source
+SELECT * FROM odbc_query('MyODBCDSN', 'SELECT id, name, amount FROM sales WHERE amount > 1000');
+
+-- Attach all tables from an ODBC source as views in DuckDB
+CALL odbc_attach('MyODBCDSN');
+
+-- Attach with overwrite option
+CALL odbc_attach('MyODBCDSN', overwrite=true);
+```
