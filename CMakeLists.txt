@@ -7,45 +7,21 @@ set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
 project(${TARGET_NAME})
+
+# Add our custom modules directory to the module path
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+# Include directories
 include_directories(src/include)
 
-# Find ODBC
-if(WIN32)
-  # Windows ODBC is included in the SDK
-  set(ODBC_LIBRARIES odbc32)
-else()
-  # Find specific ODBC libraries that we know exist on the system
-  find_library(ODBC_LIBRARY NAMES odbc PATHS /usr/lib/x86_64-linux-gnu)
-  find_library(ODBCINST_LIBRARY NAMES odbcinst PATHS /usr/lib/x86_64-linux-gnu)
-  find_library(ODBCCR_LIBRARY NAMES odbccr PATHS /usr/lib/x86_64-linux-gnu)
-  
-  set(ODBC_LIBRARIES "")
-  
-  if(ODBC_LIBRARY)
-    list(APPEND ODBC_LIBRARIES ${ODBC_LIBRARY})
-    message(STATUS "Found ODBC library: ${ODBC_LIBRARY}")
-  else()
-    message(FATAL_ERROR "Main ODBC library not found")
-  endif()
-  
-  if(ODBCINST_LIBRARY)
-    list(APPEND ODBC_LIBRARIES ${ODBCINST_LIBRARY})
-    message(STATUS "Found ODBC installer library: ${ODBCINST_LIBRARY}")
-  endif()
-  
-  if(ODBCCR_LIBRARY)
-    list(APPEND ODBC_LIBRARIES ${ODBCCR_LIBRARY})
-    message(STATUS "Found ODBC cursor library: ${ODBCCR_LIBRARY}")
-  endif()
-  
-  # Also try finding via the FindODBC module (as fallback)
-  find_package(ODBC)
-  if(ODBC_FOUND)
-    include_directories(${ODBC_INCLUDE_DIRS})
-    list(APPEND ODBC_LIBRARIES ${ODBC_LIBRARIES})
-  endif()
-  
-  message(STATUS "Final ODBC libraries for linking: ${ODBC_LIBRARIES}")
+# Find ODBC using our enhanced module
+find_package(ODBC REQUIRED)
+include_directories(${ODBC_INCLUDE_DIRS})
+
+message(STATUS "ODBC_LIBRARIES: ${ODBC_LIBRARIES}")
+message(STATUS "ODBC_INCLUDE_DIRS: ${ODBC_INCLUDE_DIRS}")
+if(DEFINED ODBC_VERSION)
+  message(STATUS "ODBC Version: ${ODBC_VERSION}")
 endif()
 
 set(EXTENSION_SOURCES 
@@ -59,10 +35,11 @@ set(EXTENSION_SOURCES
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
-# Link against ODBC libraries
+# Link against ODBC libraries for all targets
 target_link_libraries(${EXTENSION_NAME} ${ODBC_LIBRARIES})
 target_link_libraries(${LOADABLE_EXTENSION_NAME} ${ODBC_LIBRARIES})
 
+# Install the extension
 install(
   TARGETS ${EXTENSION_NAME}
   EXPORT "${DUCKDB_EXPORT_SET}"
