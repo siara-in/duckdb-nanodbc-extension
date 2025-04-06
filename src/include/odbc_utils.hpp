@@ -1,9 +1,7 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include <sql.h>
-#include <sqlext.h>
-#include <sqltypes.h>
+#include "odbc_headers.hpp"
 #include <string>
 
 namespace duckdb {

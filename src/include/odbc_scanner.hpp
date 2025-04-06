@@ -3,6 +3,7 @@
 #include "duckdb.hpp"
 #include "odbc_db.hpp"
 #include "odbc_stmt.hpp"
+#include "odbc_headers.hpp"
 
 namespace duckdb {
 

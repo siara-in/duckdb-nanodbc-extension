@@ -1,13 +1,7 @@
 #pragma once
 
 #include "duckdb.hpp"
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
-#include <sql.h>
-#include <sqlext.h>
-#include <sqltypes.h>
+#include "odbc_headers.hpp"
 
 namespace duckdb {
 

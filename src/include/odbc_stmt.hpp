@@ -2,10 +2,7 @@
 
 #include "duckdb.hpp"
 #include "odbc_db.hpp"
-
-#include <sql.h>
-#include <sqlext.h>
-#include <sqltypes.h>
+#include "odbc_headers.hpp"
 
 namespace duckdb {
 
