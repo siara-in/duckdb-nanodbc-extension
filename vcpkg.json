@@ -3,12 +3,9 @@
     {
       "name": "unixodbc",
       "platform": "!windows"
-    }
-  ],
-  "overrides": [
+    },
     {
-      "name": "unixodbc", 
-      "version": "2.3.11",
+      "name": "libiconv",
       "platform": "osx"
     }
   ]

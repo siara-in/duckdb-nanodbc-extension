@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.5)
 
 # Set extension name here
@@ -21,9 +20,18 @@ if(APPLE)
     endif()
     
     # Set minimum macOS version to avoid version mismatch warnings
-    # This ensures we're not trying to target an older version than the libraries were built for
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version" FORCE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment target" FORCE)
     message(STATUS "Setting minimum macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    
+    # Find iconv on macOS (it's part of the system but needs explicit linking)
+    find_library(ICONV_LIBRARY NAMES iconv libiconv)
+    if(ICONV_LIBRARY)
+        message(STATUS "Found iconv library: ${ICONV_LIBRARY}")
+    else()
+        # On macOS, sometimes we need to add special handling for iconv
+        set(ICONV_LIBRARY "iconv")
+        message(STATUS "Using default iconv library")
+    endif()
 endif()
 
 # Platform-specific handling for ODBC
@@ -43,6 +51,12 @@ else()
     
     message(STATUS "Found ODBC libraries: ${ODBC_LIBRARIES}")
     message(STATUS "Found ODBC includes: ${ODBC_INCLUDE_DIRS}")
+    
+    # Add iconv to ODBC libraries on macOS
+    if(APPLE AND ICONV_LIBRARY)
+        list(APPEND ODBC_LIBRARIES ${ICONV_LIBRARY})
+        message(STATUS "Added iconv to ODBC libraries: ${ODBC_LIBRARIES}")
+    endif()
 endif()
 
 # Include ODBC headers
