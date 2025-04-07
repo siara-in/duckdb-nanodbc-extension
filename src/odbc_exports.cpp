@@ -13,10 +13,10 @@ extern "C" {
     // Define the odbc_version symbol - ODBC version 3.80
     ODBC_EXPORT int odbc_version = 0x0380;
     
-    // Define a dummy odbc_init function
-    ODBC_EXPORT void odbc_init(void) {
-        // This function is typically called during ODBC initialization
-        // For our purposes, an empty implementation should be sufficient
+    // Define a dummy odbc_init function - renamed to avoid conflict
+    ODBC_EXPORT void odbc_driver_init(void) {
+        // Print to debug if this function is called
+        fprintf(stderr, "odbc_driver_init called\n");
     }
 }
 
