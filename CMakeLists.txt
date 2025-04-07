@@ -11,12 +11,21 @@ project(${TARGET_NAME})
 # Include directories
 include_directories(src/include)
 
+# Set global visibility settings to ensure symbols are exported correctly
+set(CMAKE_CXX_VISIBILITY_PRESET default)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
+
+# Add explicit export definitions for odbc_init and odbc_version
+add_definitions(-DODBC_INIT_EXPORT)
+
 # macOS-specific settings
 if(APPLE)
-    # Force x86_64 architecture on macOS if needed
-    if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
-        message(STATUS "Building for x86_64 macOS architecture")
-        set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "Build architectures for macOS" FORCE)
+    # Support for Apple Silicon (ARM64)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        message(STATUS "Building for ARM64 (Apple Silicon) macOS architecture")
+        set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
+    else()
+        message(STATUS "Building for ${CMAKE_SYSTEM_PROCESSOR} macOS architecture")
     endif()
     
     # Set minimum macOS version to avoid version mismatch warnings
@@ -24,7 +33,7 @@ if(APPLE)
     message(STATUS "Setting minimum macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
     
     # Find iconv on macOS (it's part of the system but needs explicit linking)
-    find_library(ICONV_LIBRARY NAMES iconv libiconv)
+    find_library(ICONV_LIBRARY NAMES iconv libiconv REQUIRED)
     if(ICONV_LIBRARY)
         message(STATUS "Found iconv library: ${ICONV_LIBRARY}")
     else()
@@ -32,6 +41,11 @@ if(APPLE)
         set(ICONV_LIBRARY "iconv")
         message(STATUS "Using default iconv library")
     endif()
+    
+    # Set RPATH for macOS to make sure libraries are found at runtime
+    set(CMAKE_INSTALL_RPATH "@loader_path")
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+    set(CMAKE_MACOSX_RPATH ON)
 endif()
 
 # Platform-specific handling for ODBC
@@ -57,10 +71,20 @@ else()
         list(APPEND ODBC_LIBRARIES ${ICONV_LIBRARY})
         message(STATUS "Added iconv to ODBC libraries: ${ODBC_LIBRARIES}")
     endif()
+    
+    # On Linux, make sure we're using the right linking flags
+    if(UNIX AND NOT APPLE)
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
+    endif()
 endif()
 
 # Include ODBC headers
 include_directories(${ODBC_INCLUDE_DIRS})
+
+# Print information about the build environment
+message(STATUS "Building for platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "Processor architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+message(STATUS "CMake generator: ${CMAKE_GENERATOR}")
 
 # Extension sources
 set(EXTENSION_SOURCES 
