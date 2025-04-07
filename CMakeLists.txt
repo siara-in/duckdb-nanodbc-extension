@@ -68,8 +68,7 @@ set(EXTENSION_SOURCES
     src/odbc_stmt.cpp
     src/odbc_scanner.cpp
     src/odbc_utils.cpp
-    src/odbc_extension.cpp
-    src/odbc_exports.cpp)
+    src/odbc_extension.cpp)
 
 # Build the extension
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
