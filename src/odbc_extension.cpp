@@ -49,17 +49,9 @@ void OdbcExtension::Load(DuckDB &db) {
     LoadInternal(*db.instance);
 }
 
-std::string OdbcExtension::Name() {
-    return "odbc";
-}
-
-std::string OdbcExtension::Version() const {
-#ifdef EXT_VERSION_ODBC
-    return EXT_VERSION_ODBC;
-#else
-    return "";
-#endif
-}
+// Remove these methods since they're already defined in the header
+// std::string OdbcExtension::Name() { ... }
+// std::string OdbcExtension::Version() const { ... }
 
 } // namespace duckdb
 
@@ -71,7 +63,7 @@ DUCKDB_EXTENSION_API void odbc_init(duckdb::DatabaseInstance &db) {
     db_wrapper.LoadExtension<duckdb::OdbcExtension>();
 }
 
-DUCKDB_EXTENSION_API const char *odbc_version() {
+DUCKDB_EXTENSION_API const char *odbc_extension_version() {
     return duckdb::DuckDB::LibraryVersion();
 }
 
