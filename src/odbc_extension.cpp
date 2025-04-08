@@ -16,23 +16,17 @@ static void SetODBCDebugQueryPrint(ClientContext &context, SetScope scope, Value
 }
 
 static void LoadInternal(DatabaseInstance &instance) {
-    // Debug print during loading
-    fprintf(stderr, "ODBC Extension: Loading functions\n");
-    
     // Register the ODBC scan function
     ODBCScanFunction odbc_fun;
     ExtensionUtil::RegisterFunction(instance, odbc_fun);
-    fprintf(stderr, "ODBC Extension: Registered scan function\n");
 
     // Register the ODBC attach function
     ODBCAttachFunction attach_func;
     ExtensionUtil::RegisterFunction(instance, attach_func);
-    fprintf(stderr, "ODBC Extension: Registered attach function\n");
 
     // Register the ODBC query function
     ODBCQueryFunction query_func;
     ExtensionUtil::RegisterFunction(instance, query_func);
-    fprintf(stderr, "ODBC Extension: Registered query function\n");
 
     // Add extension options
     auto &config = DBConfig::GetConfig(instance);
@@ -40,12 +34,9 @@ static void LoadInternal(DatabaseInstance &instance) {
     
     config.AddExtensionOption("odbc_debug_show_queries", "DEBUG SETTING: print all queries sent to ODBC to stdout",
                               LogicalType::BOOLEAN, Value::BOOLEAN(false), SetODBCDebugQueryPrint);
-                              
-    fprintf(stderr, "ODBC Extension: Successfully loaded\n");
 }
 
 void OdbcExtension::Load(DuckDB &db) {
-    fprintf(stderr, "ODBC Extension::Load called\n");
     LoadInternal(*db.instance);
 }
 
@@ -58,7 +49,6 @@ void OdbcExtension::Load(DuckDB &db) {
 extern "C" {
 
 DUCKDB_EXTENSION_API void odbc_init(duckdb::DatabaseInstance &db) {
-    fprintf(stderr, "ODBC Extension: odbc_init called\n");
     duckdb::DuckDB db_wrapper(db);
     db_wrapper.LoadExtension<duckdb::OdbcExtension>();
 }

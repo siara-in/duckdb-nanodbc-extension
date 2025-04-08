@@ -21,17 +21,8 @@ add_definitions(-DODBC_INIT_EXPORT)
 # macOS-specific settings
 if(APPLE)
     # Support for Apple Silicon (ARM64)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-        message(STATUS "Building for ARM64 (Apple Silicon) macOS architecture")
-        set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
-    else()
-        message(STATUS "Building for ${CMAKE_SYSTEM_PROCESSOR} macOS architecture")
-    endif()
-    
-    # Set minimum macOS version to avoid version mismatch warnings
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment target" FORCE)
-    message(STATUS "Setting minimum macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET}")
-    
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
+
     # Find iconv on macOS (it's part of the system but needs explicit linking)
     find_library(ICONV_LIBRARY NAMES iconv libiconv REQUIRED)
     if(ICONV_LIBRARY)
