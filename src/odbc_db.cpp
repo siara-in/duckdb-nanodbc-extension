@@ -92,7 +92,7 @@ ODBCDB ODBCDB::OpenWithDSN(const string &dsn, const string &username, const stri
                     (SQLCHAR*)(password.empty() ? nullptr : password.c_str()), SQL_NTS);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = GetErrorMessage(SQL_HANDLE_DBC, hdbc);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_DBC, hdbc);
         SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
         SQLFreeHandle(SQL_HANDLE_ENV, henv);
         throw std::runtime_error("Failed to connect to DSN '" + dsn + "': " + error);
@@ -154,7 +154,7 @@ ODBCDB ODBCDB::OpenWithConnectionString(const string &connection_string, const O
                           SQL_DRIVER_NOPROMPT);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = GetErrorMessage(SQL_HANDLE_DBC, hdbc);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_DBC, hdbc);
         SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
         SQLFreeHandle(SQL_HANDLE_ENV, henv);
         throw std::runtime_error("Failed to connect with connection string: " + error);
@@ -192,7 +192,7 @@ bool ODBCDB::TryPrepare(const string &query, ODBCStatement &stmt) {
 ODBCStatement ODBCDB::Prepare(const string &query) {
     ODBCStatement stmt;
     if (!TryPrepare(query, stmt)) {
-        std::string error = GetErrorMessage(SQL_HANDLE_DBC, hdbc);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_DBC, hdbc);
         throw std::runtime_error("Failed to prepare query \"" + query + "\": " + error);
     }
     return stmt;
@@ -207,7 +207,7 @@ void ODBCDB::Execute(const string &query) {
     SQLRETURN ret = SQLExecute(stmt.hstmt);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = GetErrorMessage(SQL_HANDLE_STMT, stmt.hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, stmt.hstmt);
         throw std::runtime_error("Failed to execute query \"" + query + "\": " + error);
     }
 }
@@ -247,7 +247,7 @@ std::vector<std::string> ODBCDB::GetTables() {
     // Get list of tables
     ret = SQLTables(hstmt, NULL, 0, NULL, 0, NULL, 0, (SQLCHAR*)"TABLE", SQL_NTS);
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get table list: " + error);
     }
@@ -258,7 +258,7 @@ std::vector<std::string> ODBCDB::GetTables() {
     
     ret = SQLBindCol(hstmt, 3, SQL_C_CHAR, table_name, sizeof(table_name), &table_name_len);
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to bind columns: " + error);
     }
@@ -284,7 +284,7 @@ void ODBCDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
     // Get column information
     ret = SQLColumns(hstmt, NULL, 0, NULL, 0, (SQLCHAR*)table_name.c_str(), SQL_NTS, NULL, 0);
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get column information for table '" + table_name + "': " + error);
     }
@@ -440,7 +440,7 @@ CatalogType ODBCDB::GetEntryType(const std::string &name) {
 
 void ODBCDB::CheckError(SQLRETURN ret, SQLSMALLINT handle_type, SQLHANDLE handle, const std::string &operation) {
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error_message = GetErrorMessage(handle_type, handle);
+        std::string error_message = ODBCUtils::GetErrorMessage(handle_type, handle);
         throw std::runtime_error("ODBC Error in " + operation + ": " + error_message);
     }
 }
