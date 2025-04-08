@@ -445,22 +445,6 @@ void ODBCDB::CheckError(SQLRETURN ret, SQLSMALLINT handle_type, SQLHANDLE handle
     }
 }
 
-std::string ODBCDB::GetErrorMessage(SQLSMALLINT handle_type, SQLHANDLE handle) {
-    SQLCHAR sql_state[6];
-    SQLINTEGER native_error;
-    SQLCHAR message_text[SQL_MAX_MESSAGE_LENGTH];
-    SQLSMALLINT text_length;
-    
-    SQLRETURN ret = SQLGetDiagRec(handle_type, handle, 1, sql_state, &native_error, 
-                                  message_text, sizeof(message_text), &text_length);
-    
-    if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
-        return std::string((char*)message_text, text_length);
-    } else {
-        return "Unknown error";
-    }
-}
-
 void ODBCDB::DebugSetPrintQueries(bool print) {
     debug_odbc_print_queries = print;
 }

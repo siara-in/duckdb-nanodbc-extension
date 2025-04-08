@@ -46,7 +46,7 @@ bool ODBCStatement::Step() {
         if (ret == SQL_NO_DATA) {
             return false;
         }
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to execute statement: " + error);
     }
     
@@ -56,7 +56,7 @@ bool ODBCStatement::Step() {
     }
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to fetch row: " + error);
     }
     
@@ -95,7 +95,7 @@ SQLSMALLINT ODBCStatement::GetODBCType(idx_t col) {
                                   &data_type, &column_size, &decimal_digits, &nullable);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get column type: " + error);
     }
     
@@ -161,7 +161,7 @@ std::string ODBCStatement::GetName(idx_t col) {
                                    column_name, sizeof(column_name), &name_length, nullptr);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get column name: " + error);
     }
     
@@ -177,7 +177,7 @@ idx_t ODBCStatement::GetColumnCount() {
     SQLRETURN ret = SQLNumResultCols(hstmt, &column_count);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get column count: " + error);
     }
     
@@ -196,7 +196,7 @@ std::string ODBCStatement::GetValue(idx_t col) {
     SQLRETURN ret = SQLGetData(hstmt, col + 1, SQL_C_CHAR, buffer, sizeof(buffer), &indicator);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get string value: " + error);
     }
     
@@ -219,7 +219,7 @@ int ODBCStatement::GetValue(idx_t col) {
     SQLRETURN ret = SQLGetData(hstmt, col + 1, SQL_C_LONG, &value, sizeof(value), &indicator);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get int value: " + error);
     }
     
@@ -242,7 +242,7 @@ int64_t ODBCStatement::GetValue(idx_t col) {
     SQLRETURN ret = SQLGetData(hstmt, col + 1, SQL_C_SBIGINT, &value, sizeof(value), &indicator);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get int64 value: " + error);
     }
     
@@ -265,7 +265,7 @@ double ODBCStatement::GetValue(idx_t col) {
     SQLRETURN ret = SQLGetData(hstmt, col + 1, SQL_C_DOUBLE, &value, sizeof(value), &indicator);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get double value: " + error);
     }
     
@@ -288,7 +288,7 @@ timestamp_t ODBCStatement::GetValue(idx_t col) {
     SQLRETURN ret = SQLGetData(hstmt, col + 1, SQL_C_TYPE_TIMESTAMP, &ts, sizeof(ts), &indicator);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to get timestamp value: " + error);
     }
     
@@ -323,7 +323,7 @@ void ODBCStatement::Bind(idx_t col, int value) {
                                    0, 0, (SQLPOINTER)&value, 0, nullptr);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to bind int parameter: " + error);
     }
 }
@@ -338,7 +338,7 @@ void ODBCStatement::Bind(idx_t col, int64_t value) {
                                    0, 0, (SQLPOINTER)&value, 0, nullptr);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to bind int64 parameter: " + error);
     }
 }
@@ -353,7 +353,7 @@ void ODBCStatement::Bind(idx_t col, double value) {
                                    0, 0, (SQLPOINTER)&value, 0, nullptr);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to bind double parameter: " + error);
     }
 }
@@ -368,7 +368,7 @@ void ODBCStatement::Bind(idx_t col, std::nullptr_t value) {
                                    0, 0, nullptr, 0, nullptr);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to bind null parameter: " + error);
     }
 }
@@ -383,7 +383,7 @@ void ODBCStatement::BindBlob(idx_t col, const string_t &value) {
                                    value.GetSize(), 0, (SQLPOINTER)value.GetDataUnsafe(), len, &len);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to bind blob parameter: " + error);
     }
 }
@@ -398,7 +398,7 @@ void ODBCStatement::BindText(idx_t col, const string_t &value) {
                                    value.GetSize(), 0, (SQLPOINTER)value.GetDataUnsafe(), 0, &len);
     
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("Failed to bind text parameter: " + error);
     }
 }
@@ -468,7 +468,7 @@ void ODBCStatement::CheckTypeIsFloatOrInteger(SQLSMALLINT odbc_type, idx_t col_i
 
 void ODBCStatement::CheckError(SQLRETURN ret, const std::string &operation) {
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        std::string error = ODBCDB::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+        std::string error = ODBCUtils::GetErrorMessage(SQL_HANDLE_STMT, hstmt);
         throw std::runtime_error("ODBC Error in " + operation + ": " + error);
     }
 }
