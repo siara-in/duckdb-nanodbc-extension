@@ -114,22 +114,7 @@ LogicalType ODBCUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_s
             
         case SQL_DECIMAL:
         case SQL_NUMERIC:
-            if (decimal_digits == 0) {
-                if (column_size <= 2) {
-                    return LogicalType::TINYINT;
-                } else if (column_size <= 4) {
-                    return LogicalType::SMALLINT;
-                } else if (column_size <= 9) {
-                    return LogicalType::INTEGER;
-                } else if (column_size <= 18) {
-                    return LogicalType::BIGINT;
-                } else {
-                    return LogicalType::DOUBLE;
-                }
-            } else {
-                return LogicalType::DOUBLE;
-            }
-            
+            return LogicalType::DECIMAL(column_size, decimal_digits);
         case SQL_CHAR:
         case SQL_VARCHAR:
         case SQL_LONGVARCHAR:
@@ -144,16 +129,17 @@ LogicalType ODBCUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_s
             return LogicalType::BLOB;
             
         case SQL_DATE:
+        case SQL_TYPE_DATE:
             return LogicalType::DATE;
-            
+        case SQL_TYPE_TIME:    
         case SQL_TIME:
             return LogicalType::TIME;
-            
+        case SQL_TYPE_TIMESTAMP:    
         case SQL_TIMESTAMP:
             return LogicalType::TIMESTAMP;
             
         case SQL_GUID:
-            return LogicalType::VARCHAR;
+            return LogicalType::UUID;
             
         default:
             return LogicalType::VARCHAR;
