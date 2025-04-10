@@ -4,6 +4,7 @@
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/time.hpp"
+#include "duckdb/common/types/uuid.hpp"
 #include "duckdb/storage/statistics/base_statistics.hpp"
 #include "duckdb/main/database_manager.hpp"
 #include "duckdb/main/attached_database.hpp"
@@ -295,6 +296,41 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     dtime_t time_val = Time::FromTime(ts_val.hour, ts_val.minute, ts_val.second, ts_val.fraction / 1000000);
                     
                     FlatVector::GetData<timestamp_t>(out_vec)[out_idx] = Timestamp::FromDatetime(date_val, time_val);
+                    break;
+                }
+                case LogicalTypeId::UUID: {
+                    // UUIDs in ODBC are typically returned as strings in standard format
+                    char buffer[37]; // 36 chars for UUID string + null terminator
+                    SQLLEN bytes_read;
+                    
+                    // Fetch the UUID as a string
+                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_CHAR, buffer, sizeof(buffer), &bytes_read);
+                    
+                    if (bytes_read > 0 && bytes_read < sizeof(buffer)) {
+                        // Convert string UUID to DuckDB UUID format
+                        try {
+                            // Ensure null termination
+                            buffer[bytes_read] = '\0';
+                            
+                            // Parse the UUID string
+                            hugeint_t uuid_value;
+                            if (UUID::FromString(string(buffer), uuid_value)) {
+                                FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = uuid_value;
+                            } else {
+                                // If parsing fails, set to NULL
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            }
+                        } catch (...) {
+                            // If any error occurs during conversion, set to NULL
+                            auto &mask = FlatVector::Validity(out_vec);
+                            mask.Set(out_idx, false);
+                        }
+                    } else if (bytes_read >= sizeof(buffer)) {
+                        // UUID string is too long (should never happen for valid UUIDs)
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                    }
                     break;
                 }
                 case LogicalTypeId::BLOB: {
