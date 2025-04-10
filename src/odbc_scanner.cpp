@@ -245,6 +245,62 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     FlatVector::GetData<double>(out_vec)[out_idx] = value;
                     break;
                 }
+                case LogicalTypeId::DECIMAL: {
+                    // Get decimal width and scale from the logical type
+                    auto &decimal_type = out_vec.GetType();
+                    uint8_t width = DecimalType::GetWidth(decimal_type);
+                    uint8_t scale = DecimalType::GetScale(decimal_type);
+                    
+                    // Retrieve the value as a string to preserve full precision
+                    char buffer[8192];
+                    SQLLEN indicator;
+                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_CHAR, buffer, sizeof(buffer), &indicator);
+                    
+                    if (indicator == SQL_NULL_DATA) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                    } else {
+                        // Based on decimal width, use the appropriate storage type
+                        if (width <= 4) {
+                            // DECIMAL(width,scale) with width <= 4 uses int16_t storage
+                            int16_t result;
+                            if (TryDecimalStringCast<int16_t>(buffer, indicator, result, width, scale)) {
+                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = result;
+                            } else {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            }
+                        } else if (width <= 9) {
+                            // DECIMAL(width,scale) with 4 < width <= 9 uses int32_t storage
+                            int32_t result;
+                            if (TryDecimalStringCast<int32_t>(buffer, indicator, result, width, scale)) {
+                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = result;
+                            } else {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            }
+                        } else if (width <= 18) {
+                            // DECIMAL(width,scale) with 9 < width <= 18 uses int64_t storage
+                            int64_t result;
+                            if (TryDecimalStringCast<int64_t>(buffer, indicator, result, width, scale)) {
+                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = result;
+                            } else {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            }
+                        } else {
+                            // DECIMAL(width,scale) with width > 18 uses hugeint_t storage
+                            hugeint_t result;
+                            if (TryDecimalStringCast<hugeint_t>(buffer, indicator, result, width, scale)) {
+                                FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
+                            } else {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            }
+                        }
+                    }
+                    break;
+                }
                 case LogicalTypeId::VARCHAR: {
                     // For string data, we need to handle potentially large strings
                     char buffer[8192];

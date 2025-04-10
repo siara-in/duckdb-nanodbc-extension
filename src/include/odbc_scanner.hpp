@@ -5,6 +5,9 @@
 #include "odbc_stmt.hpp"
 #include "odbc_headers.hpp"
 
+#include "duckdb/common/types/decimal.hpp"
+#include "duckdb/common/operator/decimal_cast_operators.hpp"
+
 namespace duckdb {
 
 struct ODBCBindData : public TableFunctionData {
