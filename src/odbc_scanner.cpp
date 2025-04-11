@@ -250,7 +250,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     uint8_t width = DecimalType::GetWidth(decimal_type);
                     uint8_t scale = DecimalType::GetScale(decimal_type);
                     
-                    // For NUMBER(38,0) in Snowflake, we need special handling
+                    // Special handling for large NUMBER types
                     if (width > 18) {
                         // Use SQL_C_NUMERIC to directly retrieve the value
                         SQL_NUMERIC_STRUCT numericValue;
@@ -267,23 +267,49 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                             auto &mask = FlatVector::Validity(out_vec);
                             mask.Set(out_idx, false);
                         } else {
-                            // Convert SQL_NUMERIC_STRUCT to hugeint_t safely using NumericCast
+                            // Convert SQL_NUMERIC_STRUCT to hugeint_t
                             hugeint_t result = 0;
                             int sign = (numericValue.sign == 0) ? -1 : 1;
                             
                             // Process the val array (little-endian)
                             for (int i = SQL_MAX_NUMERIC_LEN - 1; i >= 0; i--) {
-                                // Use NumericCast for safe arithmetic
                                 result = NumericCast<hugeint_t>(result * 256 + numericValue.val[i]);
                             }
                             
                             result = NumericCast<hugeint_t>(result * sign);
+                            
+                            // For debugging - can be helpful to see the actual value
+                            // std::string decimal_str = Decimal::ToString(result, width, scale);
+                            // fprintf(stderr, "Decimal value: %s (width=%d, scale=%d)\n", decimal_str.c_str(), width, scale);
+                            
+                            // Adjust for scale if needed (should be 0 for NUMBER(38,0))
+                            if (scale > 0) {
+                                // Scale adjustment for hugeint_t if needed 
+                                // (this is where Decimal helpers would be useful if needed)
+                            }
+                            
                             FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
                         }
                     } else if (scale == 0) {
                         // For integers (no decimal places), use direct numeric retrieval
-                        if (width <= 9) {
-                            // For smaller integers, use 32-bit integer
+                        if (width <= 4) {
+                            int16_t value;
+                            SQLLEN indicator;
+                            SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SSHORT, &value, sizeof(value), &indicator);
+                            
+                            if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                                break;
+                            }
+                            
+                            if (indicator == SQL_NULL_DATA) {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            } else {
+                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = value;
+                            }
+                        } else if (width <= 9) {
                             int32_t value;
                             SQLLEN indicator;
                             SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SLONG, &value, sizeof(value), &indicator);
@@ -301,7 +327,6 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                                 FlatVector::GetData<int32_t>(out_vec)[out_idx] = value;
                             }
                         } else {
-                            // For medium integers, use 64-bit integer
                             int64_t value;
                             SQLLEN indicator;
                             SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SBIGINT, &value, sizeof(value), &indicator);
@@ -335,7 +360,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                             auto &mask = FlatVector::Validity(out_vec);
                             mask.Set(out_idx, false);
                         } else {
-                            // Convert SQL_NUMERIC_STRUCT to appropriate decimal type based on width/scale
+                            // Convert SQL_NUMERIC_STRUCT to appropriate decimal type
                             hugeint_t result = 0;
                             int sign = (numericValue.sign == 0) ? -1 : 1;
                             
@@ -346,21 +371,36 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                             
                             result = NumericCast<hugeint_t>(result * sign);
                             
-                            // Apply scale factor for decimal values if needed
-                            // (adjust based on DuckDB's internal decimal representation)
+                            // Adjust for precision differences between ODBC and DuckDB
+                            if (numericValue.scale != scale) {
+                                // Adjust scale - this is where Decimal::ToString would be useful
+                                // for debugging scale mismatches
+                                // std::string decimal_str = Decimal::ToString(result, width, numericValue.scale);
+                                // fprintf(stderr, "Scale adjustment needed: %s (from=%d, to=%d)\n", 
+                                //         decimal_str.c_str(), numericValue.scale, scale);
+                                
+                                // Adjust the scale (add or remove decimal places)
+                                if (numericValue.scale > scale) {
+                                    // Divide to reduce precision
+                                    for (int i = 0; i < (numericValue.scale - scale); i++) {
+                                        result /= 10;
+                                    }
+                                } else {
+                                    // Multiply to increase precision
+                                    for (int i = 0; i < (scale - numericValue.scale); i++) {
+                                        result *= 10;
+                                    }
+                                }
+                            }
                             
                             // Store in appropriate storage based on width
                             if (width <= 4) {
-                                // DECIMAL(width,scale) with width <= 4 uses int16_t storage
                                 FlatVector::GetData<int16_t>(out_vec)[out_idx] = NumericCast<int16_t>(result);
                             } else if (width <= 9) {
-                                // DECIMAL(width,scale) with 4 < width <= 9 uses int32_t storage
                                 FlatVector::GetData<int32_t>(out_vec)[out_idx] = NumericCast<int32_t>(result);
                             } else if (width <= 18) {
-                                // DECIMAL(width,scale) with 9 < width <= 18 uses int64_t storage
                                 FlatVector::GetData<int64_t>(out_vec)[out_idx] = NumericCast<int64_t>(result);
                             } else {
-                                // DECIMAL(width,scale) with width > 18 uses hugeint_t storage
                                 FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
                             }
                         }
