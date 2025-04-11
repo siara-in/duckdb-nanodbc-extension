@@ -250,158 +250,100 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     uint8_t width = DecimalType::GetWidth(decimal_type);
                     uint8_t scale = DecimalType::GetScale(decimal_type);
                     
-                    // Special handling for large NUMBER types
-                    if (width > 18) {
-                        // Use SQL_C_NUMERIC to directly retrieve the value
-                        SQL_NUMERIC_STRUCT numericValue;
-                        SQLLEN indicator;
-                        SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_NUMERIC, &numericValue, sizeof(numericValue), &indicator);
-                        
-                        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-                            auto &mask = FlatVector::Validity(out_vec);
-                            mask.Set(out_idx, false);
-                            break;
+                    // Try direct retrieval as string first - this is more reliable across drivers
+                    std::vector<char> decimalData;
+                    bool isNull = false;
+                    
+                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, SQL_C_CHAR, isNull, decimalData)) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                        break;
+                    }
+                    
+                    if (isNull) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                    } else {
+                        // Make sure the data is null-terminated for string processing
+                        if (!decimalData.empty() && decimalData.back() != '\0') {
+                            decimalData.push_back('\0');
                         }
                         
-                        if (indicator == SQL_NULL_DATA) {
-                            auto &mask = FlatVector::Validity(out_vec);
-                            mask.Set(out_idx, false);
-                        } else {
-                            // Convert SQL_NUMERIC_STRUCT to hugeint_t
-                            hugeint_t result = 0;
-                            int sign = (numericValue.sign == 0) ? -1 : 1;
-                            
-                            // Process the val array (little-endian)
-                            for (int i = SQL_MAX_NUMERIC_LEN - 1; i >= 0; i--) {
-                                result = NumericCast<hugeint_t>(result * 256 + numericValue.val[i]);
-                            }
-                            
-                            result = NumericCast<hugeint_t>(result * sign);
-                            
-                            // For debugging - can be helpful to see the actual value
-                            // std::string decimal_str = Decimal::ToString(result, width, scale);
-                            // fprintf(stderr, "Decimal value: %s (width=%d, scale=%d)\n", decimal_str.c_str(), width, scale);
-                            
-                            // Adjust for scale if needed (should be 0 for NUMBER(38,0))
-                            if (scale > 0) {
-                                // Scale adjustment for hugeint_t if needed 
-                                // (this is where Decimal helpers would be useful if needed)
-                            }
-                            
-                            FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
-                        }
-                    } else if (scale == 0) {
-                        // For integers (no decimal places), use direct numeric retrieval
+                        // For debugging
+                        // fprintf(stderr, "Decimal string: %s (width=%d, scale=%d)\n", decimalData.data(), width, scale);
+                        
+                        // Use DuckDB's decimal string conversion functions
                         if (width <= 4) {
-                            int16_t value;
-                            SQLLEN indicator;
-                            SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SSHORT, &value, sizeof(value), &indicator);
-                            
-                            if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
-                                break;
-                            }
-                            
-                            if (indicator == SQL_NULL_DATA) {
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
+                            int16_t result;
+                            if (TryDecimalStringCast<int16_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
+                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = result;
                             } else {
-                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = value;
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
                             }
                         } else if (width <= 9) {
-                            int32_t value;
-                            SQLLEN indicator;
-                            SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SLONG, &value, sizeof(value), &indicator);
-                            
-                            if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
-                                break;
-                            }
-                            
-                            if (indicator == SQL_NULL_DATA) {
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
+                            int32_t result;
+                            if (TryDecimalStringCast<int32_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
+                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = result;
                             } else {
-                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = value;
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            }
+                        } else if (width <= 18) {
+                            int64_t result;
+                            if (TryDecimalStringCast<int64_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
+                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = result;
+                            } else {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
                             }
                         } else {
-                            int64_t value;
-                            SQLLEN indicator;
-                            SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SBIGINT, &value, sizeof(value), &indicator);
-                            
-                            if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
-                                break;
-                            }
-                            
-                            if (indicator == SQL_NULL_DATA) {
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
-                            } else {
-                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = value;
-                            }
-                        }
-                    } else {
-                        // For decimals with scale > 0
-                        SQL_NUMERIC_STRUCT numericValue;
-                        SQLLEN indicator;
-                        SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_NUMERIC, &numericValue, sizeof(numericValue), &indicator);
-                        
-                        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-                            auto &mask = FlatVector::Validity(out_vec);
-                            mask.Set(out_idx, false);
-                            break;
-                        }
-                        
-                        if (indicator == SQL_NULL_DATA) {
-                            auto &mask = FlatVector::Validity(out_vec);
-                            mask.Set(out_idx, false);
-                        } else {
-                            // Convert SQL_NUMERIC_STRUCT to appropriate decimal type
-                            hugeint_t result = 0;
-                            int sign = (numericValue.sign == 0) ? -1 : 1;
-                            
-                            // Process the val array (little-endian)
-                            for (int i = SQL_MAX_NUMERIC_LEN - 1; i >= 0; i--) {
-                                result = NumericCast<hugeint_t>(result * 256 + numericValue.val[i]);
-                            }
-                            
-                            result = NumericCast<hugeint_t>(result * sign);
-                            
-                            // Adjust for precision differences between ODBC and DuckDB
-                            if (numericValue.scale != scale) {
-                                // Adjust scale - this is where Decimal::ToString would be useful
-                                // for debugging scale mismatches
-                                // std::string decimal_str = Decimal::ToString(result, width, numericValue.scale);
-                                // fprintf(stderr, "Scale adjustment needed: %s (from=%d, to=%d)\n", 
-                                //         decimal_str.c_str(), numericValue.scale, scale);
-                                
-                                // Adjust the scale (add or remove decimal places)
-                                if (numericValue.scale > scale) {
-                                    // Divide to reduce precision
-                                    for (int i = 0; i < (numericValue.scale - scale); i++) {
-                                        result /= 10;
-                                    }
-                                } else {
-                                    // Multiply to increase precision
-                                    for (int i = 0; i < (scale - numericValue.scale); i++) {
-                                        result *= 10;
-                                    }
-                                }
-                            }
-                            
-                            // Store in appropriate storage based on width
-                            if (width <= 4) {
-                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = NumericCast<int16_t>(result);
-                            } else if (width <= 9) {
-                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = NumericCast<int32_t>(result);
-                            } else if (width <= 18) {
-                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = NumericCast<int64_t>(result);
-                            } else {
+                            hugeint_t result;
+                            if (TryDecimalStringCast<hugeint_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
                                 FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
+                            } else {
+                                // Fall back to string parsing for very large numbers
+                                try {
+                                    std::string str_val(decimalData.data());
+                                    
+                                    // Handle special PostgreSQL formatting for large numbers
+                                    if (str_val.find('e') != std::string::npos || str_val.find('E') != std::string::npos) {
+                                        // Parse scientific notation
+                                        double d_val = std::stod(str_val);
+                                        // Convert double to hugeint with appropriate scaling
+                                        hugeint_t scaled_val = hugeint_t(d_val * std::pow(10, scale));
+                                        FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = scaled_val;
+                                    } else {
+                                        // Remove decimal point for integral parsing
+                                        size_t decimal_pos = str_val.find('.');
+                                        if (decimal_pos != std::string::npos) {
+                                            str_val.erase(decimal_pos, 1);
+                                            // Adjust for missing trailing zeros
+                                            size_t fractional_digits = str_val.size() - decimal_pos;
+                                            while (fractional_digits < scale) {
+                                                str_val.push_back('0');
+                                                fractional_digits++;
+                                            }
+                                            // Truncate extra precision if needed
+                                            if (fractional_digits > scale) {
+                                                str_val = str_val.substr(0, str_val.size() - (fractional_digits - scale));
+                                            }
+                                        } else {
+                                            // Integer value - add necessary zeros
+                                            for (int i = 0; i < scale; i++) {
+                                                str_val.push_back('0');
+                                            }
+                                        }
+                                        
+                                        // Parse as hugeint
+                                        hugeint_t parsed_val = HugeInt::FromString(str_val);
+                                        FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = parsed_val;
+                                    }
+                                } catch (std::exception &e) {
+                                    // If all parsing attempts fail, set to NULL
+                                    auto &mask = FlatVector::Validity(out_vec);
+                                    mask.Set(out_idx, false);
+                                }
                             }
                         }
                     }
