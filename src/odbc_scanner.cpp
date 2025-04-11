@@ -246,66 +246,122 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     break;
                 }
                 case LogicalTypeId::DECIMAL: {
-                    // Get decimal width and scale from the logical type
                     auto &decimal_type = out_vec.GetType();
                     uint8_t width = DecimalType::GetWidth(decimal_type);
                     uint8_t scale = DecimalType::GetScale(decimal_type);
                     
-                    // Use our optimized variable-length column reader
-                    std::vector<char> decimalData;
-                    bool isNull = false;
-                    
-                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, SQL_C_CHAR, isNull, decimalData)) {
-                        auto &mask = FlatVector::Validity(out_vec);
-                        mask.Set(out_idx, false);
-                        break;
-                    }
-                    
-                    if (isNull) {
-                        auto &mask = FlatVector::Validity(out_vec);
-                        mask.Set(out_idx, false);
-                    } else {
-                        // Make sure the data is null-terminated for string processing
-                        if (!decimalData.empty() && decimalData.back() != '\0') {
-                            decimalData.push_back('\0');
+                    // For NUMBER(38,0) in Snowflake, we need special handling
+                    if (width > 18) {
+                        // Use SQL_C_NUMERIC to directly retrieve the value
+                        SQL_NUMERIC_STRUCT numericValue;
+                        SQLLEN indicator;
+                        SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_NUMERIC, &numericValue, sizeof(numericValue), &indicator);
+                        
+                        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+                            auto &mask = FlatVector::Validity(out_vec);
+                            mask.Set(out_idx, false);
+                            break;
                         }
                         
-                        // Based on decimal width, use the appropriate storage type
-                        if (width <= 4) {
-                            // DECIMAL(width,scale) with width <= 4 uses int16_t storage
-                            int16_t result;
-                            if (TryDecimalStringCast<int16_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
-                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = result;
-                            } else {
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
+                        if (indicator == SQL_NULL_DATA) {
+                            auto &mask = FlatVector::Validity(out_vec);
+                            mask.Set(out_idx, false);
+                        } else {
+                            // Convert SQL_NUMERIC_STRUCT to hugeint_t safely using NumericCast
+                            hugeint_t result = 0;
+                            int sign = (numericValue.sign == 0) ? -1 : 1;
+                            
+                            // Process the val array (little-endian)
+                            for (int i = SQL_MAX_NUMERIC_LEN - 1; i >= 0; i--) {
+                                // Use NumericCast for safe arithmetic
+                                result = NumericCast<hugeint_t>(result * 256 + numericValue.val[i]);
                             }
-                        } else if (width <= 9) {
-                            // DECIMAL(width,scale) with 4 < width <= 9 uses int32_t storage
-                            int32_t result;
-                            if (TryDecimalStringCast<int32_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
-                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = result;
-                            } else {
+                            
+                            result = NumericCast<hugeint_t>(result * sign);
+                            FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
+                        }
+                    } else if (scale == 0) {
+                        // For integers (no decimal places), use direct numeric retrieval
+                        if (width <= 9) {
+                            // For smaller integers, use 32-bit integer
+                            int32_t value;
+                            SQLLEN indicator;
+                            SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SLONG, &value, sizeof(value), &indicator);
+                            
+                            if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
                                 auto &mask = FlatVector::Validity(out_vec);
                                 mask.Set(out_idx, false);
+                                break;
                             }
-                        } else if (width <= 18) {
-                            // DECIMAL(width,scale) with 9 < width <= 18 uses int64_t storage
-                            int64_t result;
-                            if (TryDecimalStringCast<int64_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
-                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = result;
-                            } else {
+                            
+                            if (indicator == SQL_NULL_DATA) {
                                 auto &mask = FlatVector::Validity(out_vec);
                                 mask.Set(out_idx, false);
+                            } else {
+                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = value;
                             }
                         } else {
-                            // DECIMAL(width,scale) with width > 18 uses hugeint_t storage
-                            hugeint_t result;
-                            if (TryDecimalStringCast<hugeint_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
-                                FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
-                            } else {
+                            // For medium integers, use 64-bit integer
+                            int64_t value;
+                            SQLLEN indicator;
+                            SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SBIGINT, &value, sizeof(value), &indicator);
+                            
+                            if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
                                 auto &mask = FlatVector::Validity(out_vec);
                                 mask.Set(out_idx, false);
+                                break;
+                            }
+                            
+                            if (indicator == SQL_NULL_DATA) {
+                                auto &mask = FlatVector::Validity(out_vec);
+                                mask.Set(out_idx, false);
+                            } else {
+                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = value;
+                            }
+                        }
+                    } else {
+                        // For decimals with scale > 0
+                        SQL_NUMERIC_STRUCT numericValue;
+                        SQLLEN indicator;
+                        SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_NUMERIC, &numericValue, sizeof(numericValue), &indicator);
+                        
+                        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+                            auto &mask = FlatVector::Validity(out_vec);
+                            mask.Set(out_idx, false);
+                            break;
+                        }
+                        
+                        if (indicator == SQL_NULL_DATA) {
+                            auto &mask = FlatVector::Validity(out_vec);
+                            mask.Set(out_idx, false);
+                        } else {
+                            // Convert SQL_NUMERIC_STRUCT to appropriate decimal type based on width/scale
+                            hugeint_t result = 0;
+                            int sign = (numericValue.sign == 0) ? -1 : 1;
+                            
+                            // Process the val array (little-endian)
+                            for (int i = SQL_MAX_NUMERIC_LEN - 1; i >= 0; i--) {
+                                result = NumericCast<hugeint_t>(result * 256 + numericValue.val[i]);
+                            }
+                            
+                            result = NumericCast<hugeint_t>(result * sign);
+                            
+                            // Apply scale factor for decimal values if needed
+                            // (adjust based on DuckDB's internal decimal representation)
+                            
+                            // Store in appropriate storage based on width
+                            if (width <= 4) {
+                                // DECIMAL(width,scale) with width <= 4 uses int16_t storage
+                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = NumericCast<int16_t>(result);
+                            } else if (width <= 9) {
+                                // DECIMAL(width,scale) with 4 < width <= 9 uses int32_t storage
+                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = NumericCast<int32_t>(result);
+                            } else if (width <= 18) {
+                                // DECIMAL(width,scale) with 9 < width <= 18 uses int64_t storage
+                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = NumericCast<int64_t>(result);
+                            } else {
+                                // DECIMAL(width,scale) with width > 18 uses hugeint_t storage
+                                FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
                             }
                         }
                     }

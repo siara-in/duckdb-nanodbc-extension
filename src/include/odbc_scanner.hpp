@@ -7,6 +7,7 @@
 
 #include "duckdb/common/types/decimal.hpp"
 #include "duckdb/common/operator/decimal_cast_operators.hpp"
+#include "duckdb/common/numeric_utils.hpp"
 
 namespace duckdb {
 
