@@ -251,20 +251,30 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     uint8_t width = DecimalType::GetWidth(decimal_type);
                     uint8_t scale = DecimalType::GetScale(decimal_type);
                     
-                    // Retrieve the value as a string to preserve full precision
-                    char buffer[8192];
-                    SQLLEN indicator;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_CHAR, buffer, sizeof(buffer), &indicator);
+                    // Use our optimized variable-length column reader
+                    std::vector<char> decimalData;
+                    bool isNull = false;
                     
-                    if (indicator == SQL_NULL_DATA) {
+                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, SQL_C_CHAR, isNull, decimalData)) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                        break;
+                    }
+                    
+                    if (isNull) {
                         auto &mask = FlatVector::Validity(out_vec);
                         mask.Set(out_idx, false);
                     } else {
+                        // Make sure the data is null-terminated for string processing
+                        if (!decimalData.empty() && decimalData.back() != '\0') {
+                            decimalData.push_back('\0');
+                        }
+                        
                         // Based on decimal width, use the appropriate storage type
                         if (width <= 4) {
                             // DECIMAL(width,scale) with width <= 4 uses int16_t storage
                             int16_t result;
-                            if (TryDecimalStringCast<int16_t>(buffer, indicator, result, width, scale)) {
+                            if (TryDecimalStringCast<int16_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
                                 FlatVector::GetData<int16_t>(out_vec)[out_idx] = result;
                             } else {
                                 auto &mask = FlatVector::Validity(out_vec);
@@ -273,7 +283,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                         } else if (width <= 9) {
                             // DECIMAL(width,scale) with 4 < width <= 9 uses int32_t storage
                             int32_t result;
-                            if (TryDecimalStringCast<int32_t>(buffer, indicator, result, width, scale)) {
+                            if (TryDecimalStringCast<int32_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
                                 FlatVector::GetData<int32_t>(out_vec)[out_idx] = result;
                             } else {
                                 auto &mask = FlatVector::Validity(out_vec);
@@ -282,7 +292,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                         } else if (width <= 18) {
                             // DECIMAL(width,scale) with 9 < width <= 18 uses int64_t storage
                             int64_t result;
-                            if (TryDecimalStringCast<int64_t>(buffer, indicator, result, width, scale)) {
+                            if (TryDecimalStringCast<int64_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
                                 FlatVector::GetData<int64_t>(out_vec)[out_idx] = result;
                             } else {
                                 auto &mask = FlatVector::Validity(out_vec);
@@ -291,7 +301,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                         } else {
                             // DECIMAL(width,scale) with width > 18 uses hugeint_t storage
                             hugeint_t result;
-                            if (TryDecimalStringCast<hugeint_t>(buffer, indicator, result, width, scale)) {
+                            if (TryDecimalStringCast<hugeint_t>(decimalData.data(), decimalData.size() - 1, result, width, scale)) {
                                 FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
                             } else {
                                 auto &mask = FlatVector::Validity(out_vec);
@@ -302,33 +312,25 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     break;
                 }
                 case LogicalTypeId::VARCHAR: {
-                    // For string data, we need to handle potentially large strings
-                    char buffer[8192];
-                    SQLLEN bytes_read;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_CHAR, buffer, sizeof(buffer), &bytes_read);
+                    std::vector<char> strData;
+                    bool isNull = false;
                     
-                    if (bytes_read > 0 && bytes_read < sizeof(buffer)) {
-                        // String fits in the buffer
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddString(out_vec, buffer, bytes_read);
-                    } else if (bytes_read >= sizeof(buffer)) {
-                        // String is larger than buffer, need to handle in chunks
-                        std::string large_string(buffer, sizeof(buffer) - 1);
-                        
-                        while (bytes_read >= sizeof(buffer) - 1) {
-                            SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_CHAR, buffer, sizeof(buffer), &bytes_read);
-                            if (bytes_read > 0) {
-                                size_t append_size = bytes_read < sizeof(buffer) ? bytes_read : sizeof(buffer) - 1;
-                                large_string.append(buffer, append_size);
-                            }
-                        }
-                        
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddString(out_vec, large_string);
-                    } else {
-                        // Empty string
+                    SQLSMALLINT ctype = ODBCUtils::IsWideType(odbc_type) ? SQL_C_WCHAR : SQL_C_CHAR;
+                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, ctype, isNull, strData)) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                        break;
+                    }
+                    
+                    if (isNull) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                    } else if (strData.empty()) {
                         FlatVector::GetData<string_t>(out_vec)[out_idx] = 
                             StringVector::AddString(out_vec, "");
+                    } else {
+                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
+                            StringVector::AddString(out_vec, strData.data(), strData.size());
                     }
                     break;
                 }
@@ -390,34 +392,24 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                     break;
                 }
                 case LogicalTypeId::BLOB: {
-                    // For BLOB data, we need to handle potentially large binary data
-                    char buffer[8192];
-                    SQLLEN bytes_read;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_BINARY, buffer, sizeof(buffer), &bytes_read);
+                    std::vector<char> blobData;
+                    bool isNull = false;
                     
-                    if (bytes_read > 0 && bytes_read < sizeof(buffer)) {
-                        // Binary data fits in the buffer
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddStringOrBlob(out_vec, buffer, bytes_read);
-                    } else if (bytes_read >= sizeof(buffer)) {
-                        // Binary data is larger than buffer, need to handle in chunks
-                        std::vector<char> large_blob;
-                        large_blob.insert(large_blob.end(), buffer, buffer + sizeof(buffer) - 1);
-                        
-                        while (bytes_read >= sizeof(buffer) - 1) {
-                            SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_BINARY, buffer, sizeof(buffer), &bytes_read);
-                            if (bytes_read > 0) {
-                                size_t append_size = bytes_read < sizeof(buffer) ? bytes_read : sizeof(buffer) - 1;
-                                large_blob.insert(large_blob.end(), buffer, buffer + append_size);
-                            }
-                        }
-                        
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddStringOrBlob(out_vec, large_blob.data(), large_blob.size());
-                    } else {
-                        // Empty BLOB
+                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, SQL_C_BINARY, isNull, blobData)) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                        break;
+                    }
+                    
+                    if (isNull) {
+                        auto &mask = FlatVector::Validity(out_vec);
+                        mask.Set(out_idx, false);
+                    } else if (blobData.empty()) {
                         FlatVector::GetData<string_t>(out_vec)[out_idx] = 
                             StringVector::AddStringOrBlob(out_vec, "", 0);
+                    } else {
+                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
+                            StringVector::AddStringOrBlob(out_vec, blobData.data(), blobData.size());
                     }
                     break;
                 }

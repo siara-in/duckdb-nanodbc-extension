@@ -146,4 +146,89 @@ LogicalType ODBCUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_s
     }
 }
 
+bool ODBCUtils::IsBinaryType(SQLSMALLINT sqltype) {
+    switch (sqltype) {
+    case SQL_BINARY:
+    case SQL_VARBINARY:
+    case SQL_LONGVARBINARY:
+        return true;
+    }
+    return false;
+}
+
+bool ODBCUtils::IsWideType(SQLSMALLINT sqltype) {
+    switch (sqltype) {
+    case SQL_WCHAR:
+    case SQL_WVARCHAR:
+    case SQL_WLONGVARCHAR:
+    // case SQL_SS_XML:
+    // case SQL_DB2_XML:
+        return true;
+    }
+    return false;
+}
+
+bool ODBCUtils::ReadVarColumn(SQLHSTMT hstmt, SQLUSMALLINT col_idx, SQLSMALLINT ctype, 
+                             bool& isNull, std::vector<char>& result) {
+    isNull = false;
+    result.clear();
+    
+    // Determine if null terminator is needed (text vs binary)
+    const bool needsNullTerm = !IsBinaryType(ctype);
+    const size_t nullTermSize = needsNullTerm ? (IsWideType(ctype) ? sizeof(SQLWCHAR) : sizeof(SQLCHAR)) : 0;
+    
+    // Start with a reasonable buffer size
+    size_t bufferSize = 4096;
+    result.resize(bufferSize);
+    size_t totalRead = 0;
+    
+    SQLRETURN ret = SQL_SUCCESS_WITH_INFO;
+    
+    do {
+        SQLLEN cbData = 0;
+        size_t availableSpace = bufferSize - totalRead;
+        
+        ret = SQLGetData(hstmt, col_idx, ctype, 
+                        result.data() + totalRead, 
+                        (SQLLEN)availableSpace, &cbData);
+        
+        if (!SQL_SUCCEEDED(ret) && ret != SQL_NO_DATA) {
+            std::string error = GetErrorMessage(SQL_HANDLE_STMT, hstmt);
+            throw std::runtime_error("Failed to read variable data: " + error);
+        }
+        
+        if (cbData == SQL_NULL_DATA) {
+            isNull = true;
+            return true;
+        }
+        
+        if (ret == SQL_SUCCESS) {
+            // We got all the data
+            totalRead += (size_t)cbData;
+            result.resize(totalRead);
+            break;
+        } else if (ret == SQL_SUCCESS_WITH_INFO) {
+            // We need more space
+            if (cbData == SQL_NO_TOTAL) {
+                // Driver can't tell us how much data remains
+                totalRead += (availableSpace - nullTermSize);
+                bufferSize *= 2; // Double the buffer size
+            } else if ((size_t)cbData >= availableSpace) {
+                // We read what we could fit but there's more
+                totalRead += (availableSpace - nullTermSize);
+                size_t remaining = (size_t)cbData - (availableSpace - nullTermSize);
+                bufferSize = totalRead + remaining + nullTermSize;
+            } else {
+                // Unexpected case - success with info but buffer not full?
+                totalRead += (size_t)cbData;
+                break;
+            }
+            
+            result.resize(bufferSize);
+        }
+    } while (ret == SQL_SUCCESS_WITH_INFO);
+    
+    return true;
+}
+
 } // namespace duckdb
