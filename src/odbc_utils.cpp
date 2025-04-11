@@ -13,16 +13,35 @@ std::string ODBCUtils::GetErrorMessage(SQLSMALLINT handle_type, SQLHANDLE handle
     SQLCHAR sql_state[6];
     SQLINTEGER native_error;
     SQLCHAR message_text[SQL_MAX_MESSAGE_LENGTH];
-    SQLSMALLINT text_length;
+    SQLSMALLINT text_length = 0;
+    std::string error_message;
     
-    SQLRETURN ret = SQLGetDiagRec(handle_type, handle, 1, sql_state, &native_error, 
-                                 message_text, sizeof(message_text), &text_length);
-    
-    if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
-        return std::string((char*)message_text, text_length);
-    } else {
-        return "Unknown error";
+    // Get multiple error records if available
+    SQLSMALLINT i = 1;
+    while (SQLGetDiagRec(handle_type, handle, i, sql_state, &native_error, 
+                         message_text, sizeof(message_text), &text_length) == SQL_SUCCESS) {
+        if (i > 1) {
+            error_message += " | ";
+        }
+        
+        error_message += "[";
+        error_message += std::string((char*)sql_state);
+        error_message += "] ";
+        error_message += std::string((char*)message_text, text_length);
+        
+        // Add common error help text
+        if (strcmp((char*)sql_state, "HY000") == 0) {
+            error_message += " (General Error)";
+        } else if (strcmp((char*)sql_state, "HYT00") == 0) {
+            error_message += " (Timeout Expired)";
+        } else if (strcmp((char*)sql_state, "08S01") == 0) {
+            error_message += " (Communication Link Failure)";
+        }
+        
+        i++;
     }
+    
+    return error_message;
 }
 
 std::string ODBCUtils::TypeToString(SQLSMALLINT odbc_type) {
