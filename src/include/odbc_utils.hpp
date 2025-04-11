@@ -1,6 +1,7 @@
 #pragma once
 
 #include "duckdb.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "odbc_headers.hpp"
 #include <string>
 

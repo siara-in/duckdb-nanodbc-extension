@@ -10,38 +10,42 @@ void ODBCUtils::Check(SQLRETURN rc, SQLSMALLINT handle_type, SQLHANDLE handle, c
 }
 
 std::string ODBCUtils::GetErrorMessage(SQLSMALLINT handle_type, SQLHANDLE handle) {
-    SQLCHAR sql_state[6];
+    SQLCHAR sql_state[6] = {0};
     SQLINTEGER native_error;
-    SQLCHAR message_text[SQL_MAX_MESSAGE_LENGTH];
+    SQLCHAR message_text[SQL_MAX_MESSAGE_LENGTH] = {0};
     SQLSMALLINT text_length = 0;
-    std::string error_message;
+    duckdb::vector<std::string> error_parts;
     
-    // Get multiple error records if available
     SQLSMALLINT i = 1;
-    while (SQLGetDiagRec(handle_type, handle, i, sql_state, &native_error, 
-                         message_text, sizeof(message_text), &text_length) == SQL_SUCCESS) {
-        if (i > 1) {
-            error_message += " | ";
+    while (SQLGetDiagRec(handle_type, handle, i, sql_state, &native_error,
+                        message_text, SQL_MAX_MESSAGE_LENGTH, &text_length) == SQL_SUCCESS) {
+        // Convert ODBC fields to strings
+        std::string state_str(reinterpret_cast<char*>(sql_state), 5);
+        std::string message(reinterpret_cast<char*>(message_text), text_length);
+
+        // Add context-sensitive description
+        std::string description;
+        if (state_str == "HY000") {
+            description = " (General Error)";
+        } else if (state_str == "HYT00") {
+            description = " (Timeout Expired)";
+        } else if (state_str == "08S01") {
+            description = " (Communication Link Failure)";
         }
+
+        // Format using DuckDB's string utilities
+        auto formatted_part = StringUtil::Format("[%s] %s%s",
+            state_str.c_str(),
+            message.c_str(),
+            description.c_str()
+        );
         
-        error_message += "[";
-        error_message += std::string((char*)sql_state);
-        error_message += "] ";
-        error_message += std::string((char*)message_text, text_length);
-        
-        // Add common error help text
-        if (strcmp((char*)sql_state, "HY000") == 0) {
-            error_message += " (General Error)";
-        } else if (strcmp((char*)sql_state, "HYT00") == 0) {
-            error_message += " (Timeout Expired)";
-        } else if (strcmp((char*)sql_state, "08S01") == 0) {
-            error_message += " (Communication Link Failure)";
-        }
-        
+        error_parts.push_back(formatted_part);
         i++;
     }
     
-    return error_message;
+    return error_parts.empty() ? "No ODBC error information available" 
+                              : StringUtil::Join(error_parts, string(" | "));
 }
 
 std::string ODBCUtils::TypeToString(SQLSMALLINT odbc_type) {

@@ -189,7 +189,10 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
         // Process each column
         for (idx_t col_idx = 0; col_idx < output.ColumnCount(); col_idx++) {
             auto &out_vec = output.data[col_idx];
-            SQLSMALLINT odbc_type = stmt.GetODBCType(col_idx);
+
+            SQLULEN column_size = 0;
+            SQLSMALLINT decimal_digits = 0;
+            SQLSMALLINT odbc_type = stmt.GetODBCType(col_idx, &column_size, &decimal_digits);
             
             // Get the NULL indicator
             SQLLEN indicator;
@@ -247,64 +250,78 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                 }
                 case LogicalTypeId::DECIMAL: {
                     auto &decimal_type = out_vec.GetType();
-                    const uint8_t width = DecimalType::GetWidth(decimal_type);
-                    const uint8_t scale = DecimalType::GetScale(decimal_type);
-                
-                    SQL_NUMERIC_STRUCT numeric_value;
-                    SQLLEN indicator;
-                    SQLRETURN ret = SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_NUMERIC,
-                                               &numeric_value, sizeof(numeric_value), &indicator);
-                
-                    if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+                    // Get width and scale from both sources
+                    uint8_t bind_width = DecimalType::GetWidth(decimal_type);
+                    uint8_t bind_scale = DecimalType::GetScale(decimal_type);
+                    
+                    // Use scan-time information as backup if binding didn't capture it correctly
+                    uint8_t width = (bind_width > 0) ? bind_width : column_size;
+                    uint8_t scale = (bind_scale > 0) ? bind_scale : decimal_digits;
+                    
+                    // Still apply defaults if necessary
+                    if (width == 0) width = 38;  // Default width
+                    if (scale == 0) scale = 2;   // Default scale
+
+                    // Always use string representation for decimals to preserve exact values
+                    std::vector<char> decimalData;
+                    bool isNull = false;
+                    
+                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, SQL_C_CHAR, isNull, decimalData)) {
                         FlatVector::Validity(out_vec).Set(out_idx, false);
                         break;
                     }
-                
-                    if (indicator == SQL_NULL_DATA) {
+                    
+                    if (isNull) {
                         FlatVector::Validity(out_vec).Set(out_idx, false);
                         break;
                     }
-                
-                    // Convert byte array to hugeint (little-endian)
-                    hugeint_t value = 0;
-                    for (int i = SQL_MAX_NUMERIC_LEN - 1; i >= 0; --i) {
-                        value = value * 256 + numeric_value.val[i];
+                    
+                    // Ensure null-termination for string processing
+                    if (!decimalData.empty() && decimalData.back() != '\0') {
+                        decimalData.push_back('\0');
                     }
-                
-                    // Apply sign (ODBC uses 1 for positive, 0 for negative)
-                    if (numeric_value.sign == 0) {
-                        value = -value;
-                    }
-                
-                    // Adjust scale difference between ODBC and DuckDB types
-                    const int scale_diff = static_cast<int>(scale) - numeric_value.scale;
-                    if (scale_diff != 0) {
-                        hugeint_t factor = 1;
-                        if (scale_diff > 0) {
-                            for (int i = 0; i < scale_diff; ++i) factor *= 10;
-                            value *= factor;
-                        } else {
-                            for (int i = 0; i < -scale_diff; ++i) factor *= 10;
-                            value /= factor;
-                        }
-                    }
-                
-                    // Cast to appropriate storage type based on decimal width
+                    
+                    // Process based on target storage type
+                    bool success = false;
                     switch (decimal_type.InternalType()) {
-                        case PhysicalType::INT16:
-                            FlatVector::GetData<int16_t>(out_vec)[out_idx] = NumericCast<int16_t>(value);
+                        case PhysicalType::INT16: {
+                            int16_t result;
+                            success = TryDecimalStringCast<int16_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
+                            if (success) {
+                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = result;
+                            }
                             break;
-                        case PhysicalType::INT32:
-                            FlatVector::GetData<int32_t>(out_vec)[out_idx] = NumericCast<int32_t>(value);
+                        }
+                        case PhysicalType::INT32: {
+                            int32_t result;
+                            success = TryDecimalStringCast<int32_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
+                            if (success) {
+                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = result;
+                            }
                             break;
-                        case PhysicalType::INT64:
-                            FlatVector::GetData<int64_t>(out_vec)[out_idx] = NumericCast<int64_t>(value);
+                        }
+                        case PhysicalType::INT64: {
+                            int64_t result;
+                            success = TryDecimalStringCast<int64_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
+                            if (success) {
+                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = result;
+                            }
                             break;
-                        case PhysicalType::INT128:
-                            FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = value;
+                        }
+                        case PhysicalType::INT128: {
+                            hugeint_t result;
+                            success = TryDecimalStringCast<hugeint_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
+                            if (success) {
+                                FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
+                            }
                             break;
+                        }
                         default:
                             throw InternalException("Unsupported decimal storage type");
+                    }
+                    
+                    if (!success) {
+                        FlatVector::Validity(out_vec).Set(out_idx, false);
                     }
                     break;
                 }
@@ -607,8 +624,13 @@ static unique_ptr<FunctionData> QueryBind(ClientContext &context, TableFunctionB
     auto column_count = stmt.GetColumnCount();
     for (idx_t i = 0; i < column_count; i++) {
         auto column_name = stmt.GetName(i);
+        // Get full type information
+        SQLULEN column_size = 0;
+        SQLSMALLINT decimal_digits = 0;
+        SQLSMALLINT odbc_type = stmt.GetODBCType(i, &column_size, &decimal_digits);
+        
         auto column_type = result->all_varchar ? LogicalType::VARCHAR : 
-                           GetDuckDBType(stmt.GetODBCType(i), 0, 0);
+                        GetDuckDBType(odbc_type, column_size, decimal_digits);
         
         names.push_back(column_name);
         return_types.push_back(column_type);
