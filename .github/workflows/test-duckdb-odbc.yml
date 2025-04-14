@@ -153,11 +153,6 @@ jobs:
           # Set proper permissions
           chmod 755 duckdb_odbc/libduckdb_odbc.dylib
 
-          # Create symbolic link to ensure library can be found
-          echo "Creating links to ensure library can be found:"
-          sudo cp duckdb_odbc/libduckdb_odbc.dylib /usr/local/lib/
-          sudo chmod 755 /usr/local/lib/libduckdb_odbc.dylib
-          
           # Determine the correct Homebrew path
           if [ -d "/opt/homebrew/etc" ]; then
             # For Apple Silicon Macs
@@ -177,8 +172,8 @@ jobs:
           sudo touch $HOMEBREW_ETC/odbcinst.ini
           echo "[DuckDB Driver]" | sudo tee $HOMEBREW_ETC/odbcinst.ini
           echo "Description=DuckDB ODBC Driver" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
-          echo "Driver=/usr/local/lib/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
-          echo "Setup=/usr/local/lib/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "Driver=$(pwd)/duckdb_odbc/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "Setup=$(pwd)/duckdb_odbc/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
           echo "UsageCount=1" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
           
           # Create a DSN in odbc.ini
@@ -191,10 +186,6 @@ jobs:
           
           # Set permissions
           sudo chmod 644 $HOMEBREW_ETC/odbcinst.ini $HOMEBREW_ETC/odbc.ini
-          
-          # Create a symlink to ensure the driver manager finds the configuration
-          sudo ln -sf $HOMEBREW_ETC/odbcinst.ini /etc/odbcinst.ini || echo "Failed to create symlink to /etc"
-          sudo ln -sf $HOMEBREW_ETC/odbc.ini /etc/odbc.ini || echo "Failed to create symlink to /etc"
       
       # Step 2: Download and Setup DuckDB ODBC Driver (Windows)
       - name: Download and Setup DuckDB ODBC Driver (Windows)
