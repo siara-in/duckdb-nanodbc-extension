@@ -298,8 +298,87 @@ jobs:
           Write-Host "===== ODBC Drivers After Installation ====="
           Get-ItemProperty 'HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers' -ErrorAction SilentlyContinue | Format-Table -AutoSize
           Get-ChildItem 'HKLM:\SOFTWARE\ODBC\ODBCINST.INI' -ErrorAction SilentlyContinue | 
-            Where-Object { $_.Name -notmatch 'ODBC Drivers$' } | 
+            Where-Object { $_.Name -notmatch 'ODBC Drivers} | 
             ForEach-Object { Write-Host $_.PSChildName }
           
-          Write-Host "===== Testing DuckDB ODBC Driver ====="
-          # Optional: Add a test using PowerShell to verify the driver, if needed
+          Write-Host "===== Testing DuckDB ODBC Driver with PowerShell ====="
+          # Create test script file
+          $testScript = @'
+          # Create DSN for testing
+          $regPath = "HKLM:\SOFTWARE\ODBC\ODBC.INI"
+          
+          if (!(Test-Path "$regPath\DuckDB_Test")) {
+            New-Item -Path "$regPath\DuckDB_Test" -Force | Out-Null
+          }
+          
+          # Get the driver path from the registry
+          $driverPath = (Get-ItemProperty "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\DuckDB Driver" -ErrorAction SilentlyContinue).Driver
+          if (!$driverPath) {
+            Write-Host "Error: Could not find DuckDB driver path in registry"
+            exit 1
+          }
+          
+          # Set up a DSN
+          New-ItemProperty -Path "$regPath\DuckDB_Test" -Name "Driver" -Value $driverPath -PropertyType String -Force | Out-Null
+          New-ItemProperty -Path "$regPath\DuckDB_Test" -Name "Description" -Value "DuckDB Test DSN" -PropertyType String -Force | Out-Null
+          New-ItemProperty -Path "$regPath\DuckDB_Test" -Name "Database" -Value ":memory:" -PropertyType String -Force | Out-Null
+          
+          # Register the DSN in ODBC Data Sources
+          if (!(Test-Path "$regPath\ODBC Data Sources")) {
+            New-Item -Path "$regPath\ODBC Data Sources" -Force | Out-Null
+          }
+          New-ItemProperty -Path "$regPath\ODBC Data Sources" -Name "DuckDB_Test" -Value "DuckDB Driver" -PropertyType String -Force | Out-Null
+          
+          Write-Host "Created test DSN: DuckDB_Test"
+          
+          # Test the connection with ODBC
+          Add-Type -Path "System.Data.dll"
+          
+          try {
+            Write-Host "Connecting to DuckDB via ODBC..."
+            $connectionString = "DSN=DuckDB_Test;"
+            $conn = New-Object System.Data.Odbc.OdbcConnection($connectionString)
+            $conn.Open()
+            
+            Write-Host "Connection successful! Executing test query..."
+            $cmd = New-Object System.Data.Odbc.OdbcCommand("SELECT 42 AS answer", $conn)
+            $reader = $cmd.ExecuteReader()
+            
+            while ($reader.Read()) {
+              $result = $reader.GetValue(0)
+              Write-Host "Query result: $result"
+              if ($result -eq 42) {
+                Write-Host "✅ Test PASSED: Got expected value 42"
+              } else {
+                Write-Host "❌ Test FAILED: Got unexpected value $result"
+                exit 1
+              }
+            }
+            
+            $reader.Close()
+            $conn.Close()
+            Write-Host "Connection closed."
+          }
+          catch {
+            Write-Host "❌ Error testing connection: $_"
+            Write-Host $_.Exception
+            exit 1
+          }
+          
+          Write-Host "✅ DuckDB ODBC driver test completed successfully!"
+          '@
+          
+          $testScript | Out-File -FilePath "test_duckdb_odbc.ps1" -Encoding utf8
+          
+          # Execute the test script
+          try {
+            & powershell -File test_duckdb_odbc.ps1
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "❌ Test script failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
+          }
+          catch {
+            Write-Host "❌ Error executing test script: $_"
+            exit 1
+          }
