@@ -42,8 +42,7 @@ if (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\DuckDB Driver") {
     Write-Host "✅ Test DSN '$dsn' created successfully"
     
     # Optional: Test the connection
-    # Uncomment the following code if you want to test an actual connection
-    <#
+
     Write-Host "Testing connection to DuckDB..."
     try {
         Add-Type -Path "System.Data.dll"
@@ -71,7 +70,7 @@ if (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\DuckDB Driver") {
         Write-Host "❌ Connection test failed: $_"
         exit 1
     }
-    #>
+
     
     Write-Host "✅ DuckDB ODBC driver testing complete"
     exit 0
