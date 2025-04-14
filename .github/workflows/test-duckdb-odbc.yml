@@ -115,14 +115,48 @@ jobs:
           echo "Checking extracted files:"
           ls -la duckdb_odbc/
           
-          # Remove any quarantine attributes and set proper permissions
-          echo "Setting proper permissions on the library:"
-          xattr -d com.apple.quarantine duckdb_odbc/libduckdb_odbc.dylib || echo "No quarantine attribute found"
-          chmod 755 duckdb_odbc/libduckdb_odbc.dylib
-          
           # Check if dynamic library is valid
           echo "Checking dynamic library information:"
-          otool -L duckdb_odbc/libduckdb_odbc.dylib || echo "Could not read library information"
+          otool -L duckdb_odbc/libduckdb_odbc.dylib
+          
+          # Install unixODBC dependencies properly
+          echo "Installing unixODBC with proper configuration:"
+          brew install unixodbc
+          brew list unixodbc
+          
+          # Find the unixODBC installation location
+          UNIXODBC_LIB=$(brew --prefix unixodbc)/lib
+          echo "unixODBC library location: $UNIXODBC_LIB"
+          ls -la $UNIXODBC_LIB
+          
+          # Fix the library dependencies with install_name_tool
+          echo "Fixing library path dependencies:"
+          # First let's keep the original in case we need it
+          cp duckdb_odbc/libduckdb_odbc.dylib duckdb_odbc/libduckdb_odbc.dylib.orig
+          
+          # Try to fix hard-coded paths if needed 
+          if otool -L duckdb_odbc/libduckdb_odbc.dylib | grep -q "/Users/runner/work/duckdb-odbc"; then
+            echo "Attempting to fix hardcoded paths in the library..."
+            # Find the libodbcinst library path in the brew installation
+            ODBCINST_LIB=$(find $UNIXODBC_LIB -name "libodbcinst*.dylib" | head -1)
+            echo "Found odbcinst library at: $ODBCINST_LIB"
+            
+            install_name_tool -change "/Users/runner/work/duckdb-odbc/duckdb-odbc/build/unixodbc/build/lib/libodbcinst.2.dylib" \
+                              "$ODBCINST_LIB" \
+                              duckdb_odbc/libduckdb_odbc.dylib || echo "Failed to update library path"
+            
+            # Check if the changes were applied
+            echo "Checking library dependencies after changes:"
+            otool -L duckdb_odbc/libduckdb_odbc.dylib
+          fi
+          
+          # Set proper permissions
+          chmod 755 duckdb_odbc/libduckdb_odbc.dylib
+
+          # Create symbolic link to ensure library can be found
+          echo "Creating links to ensure library can be found:"
+          sudo cp duckdb_odbc/libduckdb_odbc.dylib /usr/local/lib/
+          sudo chmod 755 /usr/local/lib/libduckdb_odbc.dylib
           
           # Determine the correct Homebrew path
           if [ -d "/opt/homebrew/etc" ]; then
@@ -135,22 +169,16 @@ jobs:
           
           echo "Using Homebrew config directory: $HOMEBREW_ETC"
           
-          # Create directories if they don't exist
+          # Create ODBC configuration directories if they don't exist
           sudo mkdir -p $HOMEBREW_ETC
-          
-          # Copy the driver to a system location
-          DRIVER_DIR="/usr/local/lib"
-          sudo mkdir -p $DRIVER_DIR
-          sudo cp duckdb_odbc/libduckdb_odbc.dylib $DRIVER_DIR/
-          sudo chmod 755 $DRIVER_DIR/libduckdb_odbc.dylib
           
           # Create odbcinst.ini file with DuckDB driver definition
           echo "Creating ODBC driver configuration in $HOMEBREW_ETC/odbcinst.ini"
           sudo touch $HOMEBREW_ETC/odbcinst.ini
           echo "[DuckDB Driver]" | sudo tee $HOMEBREW_ETC/odbcinst.ini
           echo "Description=DuckDB ODBC Driver" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
-          echo "Driver=$DRIVER_DIR/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
-          echo "Setup=$DRIVER_DIR/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "Driver=/usr/local/lib/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "Setup=/usr/local/lib/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
           echo "UsageCount=1" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
           
           # Create a DSN in odbc.ini
@@ -163,6 +191,10 @@ jobs:
           
           # Set permissions
           sudo chmod 644 $HOMEBREW_ETC/odbcinst.ini $HOMEBREW_ETC/odbc.ini
+          
+          # Create a symlink to ensure the driver manager finds the configuration
+          sudo ln -sf $HOMEBREW_ETC/odbcinst.ini /etc/odbcinst.ini || echo "Failed to create symlink to /etc"
+          sudo ln -sf $HOMEBREW_ETC/odbc.ini /etc/odbc.ini || echo "Failed to create symlink to /etc"
       
       # Step 2: Download and Setup DuckDB ODBC Driver (Windows)
       - name: Download and Setup DuckDB ODBC Driver (Windows)
