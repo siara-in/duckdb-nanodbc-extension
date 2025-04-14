@@ -40,8 +40,23 @@ jobs:
         if: matrix.platform == 'macos-latest'
         run: |
           echo "===== ODBC Drivers Before Installation ====="
-          [ -f /usr/local/etc/odbcinst.ini ] && cat /usr/local/etc/odbcinst.ini || echo "No odbcinst.ini file found"
-          [ -f /opt/homebrew/etc/odbcinst.ini ] && cat /opt/homebrew/etc/odbcinst.ini || echo "No Homebrew odbcinst.ini file found"
+          
+          # Determine the correct Homebrew path
+          if [ -d "/opt/homebrew/etc" ]; then
+            # For Apple Silicon Macs
+            HOMEBREW_ETC="/opt/homebrew/etc"
+          else
+            # For Intel Macs
+            HOMEBREW_ETC="/usr/local/etc"
+          fi
+          
+          echo "Using Homebrew config directory: $HOMEBREW_ETC"
+          
+          # Check for existing ODBC configuration files
+          [ -f $HOMEBREW_ETC/odbcinst.ini ] && cat $HOMEBREW_ETC/odbcinst.ini || echo "No odbcinst.ini file found"
+          [ -f $HOMEBREW_ETC/odbc.ini ] && cat $HOMEBREW_ETC/odbc.ini || echo "No odbc.ini file found"
+          
+          # List any existing ODBC drivers
           odbcinst -q -d || echo "odbcinst command not available or no drivers found"
       
       # Step 1: List existing ODBC drivers (Windows)
@@ -96,18 +111,39 @@ jobs:
           curl -L -o duckdb_odbc-osx-universal.zip https://github.com/duckdb/duckdb-odbc/releases/download/v1.2.2/duckdb_odbc-osx-universal.zip
           unzip duckdb_odbc-osx-universal.zip -d duckdb_odbc
           
+          # Determine the correct Homebrew path
+          if [ -d "/opt/homebrew/etc" ]; then
+            # For Apple Silicon Macs
+            HOMEBREW_ETC="/opt/homebrew/etc"
+          else
+            # For Intel Macs
+            HOMEBREW_ETC="/usr/local/etc"
+          fi
+          
+          echo "Using Homebrew config directory: $HOMEBREW_ETC"
+          
+          # Create directories if they don't exist
+          sudo mkdir -p $HOMEBREW_ETC
+          
           # Create odbcinst.ini file with DuckDB driver definition
-          echo "[DuckDB Driver]" | sudo tee -a /usr/local/etc/odbcinst.ini
-          echo "Description=DuckDB ODBC Driver" | sudo tee -a /usr/local/etc/odbcinst.ini
-          echo "Driver=$(pwd)/duckdb_odbc/libduckdb_odbc.dylib" | sudo tee -a /usr/local/etc/odbcinst.ini
-          echo "Setup=$(pwd)/duckdb_odbc/libduckdb_odbc.dylib" | sudo tee -a /usr/local/etc/odbcinst.ini
-          echo "UsageCount=1" | sudo tee -a /usr/local/etc/odbcinst.ini
+          echo "Creating ODBC driver configuration in $HOMEBREW_ETC/odbcinst.ini"
+          sudo touch $HOMEBREW_ETC/odbcinst.ini
+          echo "[DuckDB Driver]" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "Description=DuckDB ODBC Driver" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "Driver=$(pwd)/duckdb_odbc/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "Setup=$(pwd)/duckdb_odbc/libduckdb_odbc.dylib" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
+          echo "UsageCount=1" | sudo tee -a $HOMEBREW_ETC/odbcinst.ini
           
           # Create a DSN in odbc.ini
-          echo "[DuckDB]" | sudo tee -a /usr/local/etc/odbc.ini
-          echo "Description=DuckDB Database" | sudo tee -a /usr/local/etc/odbc.ini
-          echo "Driver=DuckDB Driver" | sudo tee -a /usr/local/etc/odbc.ini
-          echo "Database=:memory:" | sudo tee -a /usr/local/etc/odbc.ini
+          echo "Creating ODBC DSN configuration in $HOMEBREW_ETC/odbc.ini"
+          sudo touch $HOMEBREW_ETC/odbc.ini
+          echo "[DuckDB]" | sudo tee -a $HOMEBREW_ETC/odbc.ini
+          echo "Description=DuckDB Database" | sudo tee -a $HOMEBREW_ETC/odbc.ini
+          echo "Driver=DuckDB Driver" | sudo tee -a $HOMEBREW_ETC/odbc.ini
+          echo "Database=:memory:" | sudo tee -a $HOMEBREW_ETC/odbc.ini
+          
+          # Set permissions
+          sudo chmod 644 $HOMEBREW_ETC/odbcinst.ini $HOMEBREW_ETC/odbc.ini
       
       # Step 2: Download and Setup DuckDB ODBC Driver (Windows)
       - name: Download and Setup DuckDB ODBC Driver (Windows)
@@ -179,12 +215,37 @@ jobs:
         if: matrix.platform == 'macos-latest'
         run: |
           echo "===== ODBC Drivers After Installation ====="
-          cat /usr/local/etc/odbcinst.ini || echo "No odbcinst.ini file found"
-          cat /usr/local/etc/odbc.ini || echo "No odbc.ini file found"
+          
+          # Determine the correct Homebrew path
+          if [ -d "/opt/homebrew/etc" ]; then
+            # For Apple Silicon Macs
+            HOMEBREW_ETC="/opt/homebrew/etc"
+          else
+            # For Intel Macs
+            HOMEBREW_ETC="/usr/local/etc"
+          fi
+          
+          echo "Using Homebrew config directory: $HOMEBREW_ETC"
+          
+          # Check the driver configuration
+          echo "ODBC Drivers configuration:"
+          cat $HOMEBREW_ETC/odbcinst.ini || echo "No odbcinst.ini file found"
+          
+          # Check the DSN configuration
+          echo "ODBC DSN configuration:"
+          cat $HOMEBREW_ETC/odbc.ini || echo "No odbc.ini file found"
+          
+          # List installed drivers
+          echo "Installed ODBC drivers:"
           odbcinst -q -d || echo "odbcinst command not available or no drivers found"
           
           echo "===== Testing DuckDB ODBC Driver ====="
-          # Optional: Add a simple test to verify the driver works
+          # Set environment variables to help ODBC find the configuration
+          export ODBCSYSINI=$HOMEBREW_ETC
+          export ODBCINI=$HOMEBREW_ETC/odbc.ini
+          
+          # Try to connect to the DSN
+          echo "Trying to connect to DuckDB DSN:"
           isql -v DuckDB || echo "Could not connect to DuckDB DSN"
       
       # Step 3: List ODBC drivers after installation (Windows)
