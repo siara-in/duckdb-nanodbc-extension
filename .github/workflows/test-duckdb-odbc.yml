@@ -192,12 +192,15 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: powershell
         run: |
-          echo ===== Installing DuckDB ODBC Driver =====
+          Write-Host "===== Installing DuckDB ODBC Driver ====="
           mkdir duckdb_odbc
-          curl -L -o duckdb_odbc.zip https://github.com/duckdb/duckdb-odbc/releases/download/v1.2.2/duckdb_odbc-windows-amd64.zip
-          powershell -Command "Expand-Archive -Path duckdb_odbc.zip -DestinationPath duckdb_odbc"
-          cd duckdb_odbc
-          .\odbc_install.exe /CI
+          Invoke-WebRequest -Uri "https://github.com/duckdb/duckdb-odbc/releases/download/v1.2.2/duckdb_odbc-windows-amd64.zip" -OutFile "duckdb_odbc.zip"
+          Expand-Archive -Path duckdb_odbc.zip -DestinationPath duckdb_odbc -Force
+          
+          Write-Host "===== Running ODBC Installer ====="
+          # Run installer with /CL for command line installation
+          Start-Process -FilePath ".\duckdb_odbc\odbc_install.exe" -ArgumentList "/CL" -Wait -NoNewWindow
+         
       
       # Step 3: List ODBC drivers after installation (Linux)
       - name: List ODBC drivers after installation (Linux)
