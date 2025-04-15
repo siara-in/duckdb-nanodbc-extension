@@ -199,9 +199,10 @@ jobs:
           
           Write-Host "===== Running ODBC Installer ====="
           # Run installer with /CL for command line installation
-          Start-Process -FilePath ".\duckdb_odbc\odbc_install.exe" -ArgumentList "/CL" -Wait -NoNewWindow
+          .\duckdb_odbc\odbc_install.exe /CI
          
-      
+          Write-Host "===== ODBC Installer completed ====="
+       
       # Step 3: List ODBC drivers after installation (Linux)
       - name: List ODBC drivers after installation (Linux)
         if: matrix.platform == 'ubuntu-latest'
