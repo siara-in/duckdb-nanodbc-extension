@@ -95,8 +95,8 @@ build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
 # Link against ODBC libraries and nanodbc for all targets
-target_link_libraries(${EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc::nanodbc)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc::nanodbc)
+target_link_libraries(${EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc)
 
 # Install the extension
 install(
