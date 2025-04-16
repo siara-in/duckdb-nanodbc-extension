@@ -11,6 +11,18 @@ project(${TARGET_NAME})
 # Include directories
 include_directories(src/include)
 
+# Download and configure nanodbc
+include(FetchContent)
+set(NANODBC_DISABLE_TESTS ON CACHE BOOL "Disable nanodbc tests")
+set(NANODBC_DISABLE_EXAMPLES ON CACHE BOOL "Disable nanodbc examples")
+set(NANODBC_DISABLE_INSTALL ON CACHE BOOL "Disable nanodbc installation")
+FetchContent_Declare(
+    nanodbc
+    GIT_REPOSITORY https://github.com/nanodbc/nanodbc.git
+    GIT_TAG v2.14.0
+)
+FetchContent_MakeAvailable(nanodbc)
+
 # Set global visibility settings to ensure symbols are exported correctly
 set(CMAKE_CXX_VISIBILITY_PRESET default)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
@@ -71,28 +83,30 @@ endif()
 
 # Include ODBC headers
 include_directories(${ODBC_INCLUDE_DIRS})
+include_directories(${nanodbc_SOURCE_DIR})
 
 # Print information about the build environment
 message(STATUS "Building for platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Processor architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 message(STATUS "CMake generator: ${CMAKE_GENERATOR}")
+message(STATUS "Using nanodbc from: ${nanodbc_SOURCE_DIR}")
 
 # Extension sources
 set(EXTENSION_SOURCES 
-    src/odbc_db.cpp
-    src/odbc_stmt.cpp
-    src/odbc_scanner.cpp
-    src/odbc_utils.cpp
-    src/odbc_extension.cpp
+    src/nanodbc_db.cpp
+    src/nanodbc_stmt.cpp
+    src/nanodbc_utils.cpp
+    src/nanodbc_scanner.cpp
+    src/nodbc_extension.cpp
     src/odbc_exports.cpp)
 
 # Build the extension
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
-# Link against ODBC libraries for all targets
-target_link_libraries(${EXTENSION_NAME} ${ODBC_LIBRARIES})
-target_link_libraries(${LOADABLE_EXTENSION_NAME} ${ODBC_LIBRARIES})
+# Link against ODBC libraries and nanodbc for all targets
+target_link_libraries(${EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc)
 
 # Install the extension
 install(
