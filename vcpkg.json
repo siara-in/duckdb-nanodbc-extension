@@ -1,5 +1,6 @@
 {
-  "dependencies": [    
+  "dependencies": [
+    "nanodbc",
     {
       "name": "unixodbc",
       "platform": "!windows"

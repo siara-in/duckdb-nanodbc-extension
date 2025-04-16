@@ -3,7 +3,7 @@
 #include "odbc_extension.hpp"
 #include "duckdb.hpp"
 #include "nanodbc_db.hpp"
-#include "odbc_scanner.hpp"
+#include "nanodbc_scanner.hpp"
 
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/main/extension_util.hpp"
