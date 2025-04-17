@@ -50,25 +50,23 @@ bool NanodbcStatement::Step() {
     }
     
     try {
+        // Execute the statement if it hasn't been executed yet
         if (!executed) {
-            // First execution
             result = stmt.execute();
             executed = true;
-            has_result = true;
             
-            // Check if we have any rows
-            return result.next();
-        } else if (has_result) {
-            // Continue fetching results
-            return result.next();
-        } else {
-            return false;
+            // Nanodbc automatically positions to the first row after execute,
+            // so we don't need to call next() here
+            return result.position() > 0;
         }
-    } catch (const nanodbc::database_error& e) {
+        
+        // For subsequent calls, just fetch the next row
+        return result.next();
+    }
+    catch (const nanodbc::database_error& e) {
         throw std::runtime_error("Failed to execute statement: " + NanodbcUtils::HandleException(e));
     }
 }
-
 void NanodbcStatement::Reset() {
     if (IsOpen()) {
         try {

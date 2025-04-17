@@ -176,9 +176,14 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
         
         auto &stmt = state.stmt;
         bool has_more;
-        
-        // For the first row or subsequent rows, call Step which executes and fetches
-        has_more = stmt.Step();
+
+        if (out_idx == 0) {
+            // For first row, execute and fetch
+            has_more = stmt.Step();
+        } else {
+            // For subsequent rows, use result.next() directly 
+            has_more = stmt.result.next();
+        }
         
         if (!has_more) {
             state.done = true;
