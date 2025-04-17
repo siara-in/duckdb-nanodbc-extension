@@ -11,33 +11,47 @@ namespace duckdb {
 NanodbcStatement::NanodbcStatement() : has_result(false), executed(false) {
 }
 
-NanodbcStatement::NanodbcStatement(nanodbc::connection& conn, const std::string& query) 
+NanodbcStatement::NanodbcStatement(nanodbc::connection &conn, const std::string &query)
     : has_result(false), executed(false) {
     try {
+        // Prepare the statement
         stmt = nanodbc::statement(conn, query);
-    } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("Failed to prepare statement: " + NanodbcUtils::HandleException(e));
+    } catch (const nanodbc::database_error &e) {
+        // Wrap and rethrow with a descriptive message
+        throw std::runtime_error("Failed to prepare statement: " +
+                                 NanodbcUtils::HandleException(e));
     }
 }
+
 
 NanodbcStatement::~NanodbcStatement() {
     Close();
 }
 
-NanodbcStatement::NanodbcStatement(NanodbcStatement &&other) noexcept 
-    : stmt(std::move(other.stmt)), result(std::move(other.result)),
-      has_result(other.has_result), executed(other.executed) {
+NanodbcStatement::NanodbcStatement(NanodbcStatement &&other) noexcept
+    : stmt(std::move(other.stmt)),
+      result(std::move(other.result)),
+      has_result(other.has_result),
+      executed(other.executed) {
+    // Reset the moved‐from instance so its destructor is a no‐op
+    other.stmt = nanodbc::statement();
+    other.result = nanodbc::result();
     other.has_result = false;
     other.executed = false;
 }
 
 NanodbcStatement &NanodbcStatement::operator=(NanodbcStatement &&other) noexcept {
     if (this != &other) {
+        // Clean up this’s current handles
         Close();
+        // Move in the new handles
         stmt = std::move(other.stmt);
         result = std::move(other.result);
         has_result = other.has_result;
         executed = other.executed;
+        // Reset the moved‐from so its destructor won’t double‐free
+        other.stmt = nanodbc::statement();
+        other.result = nanodbc::result();
         other.has_result = false;
         other.executed = false;
     }
@@ -48,25 +62,20 @@ bool NanodbcStatement::Step() {
     if (!IsOpen()) {
         return false;
     }
-    
     try {
-        // Execute the statement if it hasn't been executed yet
+        // On the very first call, execute the statement; on every call, advance the cursor.
         if (!executed) {
             result = stmt.execute();
             executed = true;
-            
-            // Nanodbc automatically positions to the first row after execute,
-            // so we don't need to call next() here
-            return result.position() > 0;
         }
-        
-        // For subsequent calls, just fetch the next row
+        // result.next() moves to the *first* row on the first invocation,
+        // and to subsequent rows thereafter.
         return result.next();
-    }
-    catch (const nanodbc::database_error& e) {
+    } catch (const nanodbc::database_error &e) {
         throw std::runtime_error("Failed to execute statement: " + NanodbcUtils::HandleException(e));
     }
 }
+
 void NanodbcStatement::Reset() {
     if (IsOpen()) {
         try {

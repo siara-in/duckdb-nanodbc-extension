@@ -96,31 +96,33 @@ NanodbcDB NanodbcDB::OpenWithConnectionString(const string &connection_string, c
     }
 }
 
-bool NanodbcDB::TryPrepare(const string &query, NanodbcStatement &stmt) {
+bool NanodbcDB::TryPrepare(const std::string &query, NanodbcStatement &stmt) {
     if (!IsOpen()) {
         return false;
     }
-    
-    if (debug_print_queries) {
-        printf("ODBC Query: %s\n", query.c_str());
-    }
-    
     try {
+        // Prepare via statement constructor
         stmt = NanodbcStatement(conn, query);
         return true;
-    } catch (const nanodbc::database_error&) {
+    } catch (const nanodbc::database_error &) {
+        return false;
+    } catch (const std::exception &) {
         return false;
     }
 }
 
-NanodbcStatement NanodbcDB::Prepare(const string &query) {
+NanodbcStatement NanodbcDB::Prepare(const std::string &query) {
     NanodbcStatement stmt;
+    // First try the fast path
     if (!TryPrepare(query, stmt)) {
+        // Fallback: rethrow any error to get the actual message
         try {
-            // Try again to get the actual error
             stmt = NanodbcStatement(conn, query);
-        } catch (const nanodbc::database_error& e) {
-            throw std::runtime_error("Failed to prepare query \"" + query + "\": " + NanodbcUtils::HandleException(e));
+        } catch (const nanodbc::database_error &e) {
+            throw std::runtime_error(
+                "Failed to prepare query \"" + query + "\": " +
+                NanodbcUtils::HandleException(e)
+            );
         }
     }
     return stmt;

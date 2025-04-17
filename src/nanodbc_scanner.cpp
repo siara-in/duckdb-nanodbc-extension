@@ -23,7 +23,6 @@ int GetODBCSQLType(const LogicalType &type) {
 static unique_ptr<FunctionData> ODBCBind(ClientContext &context, TableFunctionBindInput &input,
                                        vector<LogicalType> &return_types, vector<string> &names) {
     auto result = make_uniq<ODBCBindData>();
-    
     // Check which connection method to use
     if (input.inputs[0].type().id() == LogicalTypeId::VARCHAR) {
         // First argument is table name
@@ -163,34 +162,18 @@ static unique_ptr<GlobalTableFunctionState> ODBCInitGlobalState(ClientContext &c
 static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
     auto &state = data.local_state->Cast<ODBCLocalState>();
     if (state.done) {
+        output.SetCardinality(0);
         return;
     }
     
     // Fetch rows and populate the DataChunk
     idx_t out_idx = 0;
-    while (true) {
-        if (out_idx == STANDARD_VECTOR_SIZE) {
-            output.SetCardinality(out_idx);
-            return;
-        }
-        
-        auto &stmt = state.stmt;
-        bool has_more;
-
-        if (out_idx == 0) {
-            // For first row, execute and fetch
-            has_more = stmt.Step();
-        } else {
-            // For subsequent rows, use result.next() directly 
-            has_more = stmt.result.next();
-        }
-        
-        if (!has_more) {
+    while (out_idx < STANDARD_VECTOR_SIZE) {
+        if (!state.stmt.Step()) {
+            // No more rows to fetch
             state.done = true;
-            output.SetCardinality(out_idx);
             break;
         }
-        
         state.scan_count++;
         
         try {
@@ -199,12 +182,11 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                 auto &out_vec = output.data[col_idx];
                 
                 // Using nanodbc result to get data
-                auto &result = stmt.result;
+                auto &result = state.stmt.result;
                 
                 // Check for NULL
                 if (result.is_null(col_idx)) {
-                    auto &mask = FlatVector::Validity(out_vec);
-                    mask.Set(out_idx, false);
+                    FlatVector::Validity(out_vec).Set(out_idx, false);
                     continue;
                 }
                 
@@ -379,6 +361,8 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
         
         out_idx++;
     }
+    // Set the cardinality of the output chunk
+    output.SetCardinality(out_idx);
 }
 
 static InsertionOrderPreservingMap<string> ODBCToString(TableFunctionToStringInput &input) {
@@ -516,112 +500,78 @@ ODBCAttachFunction::ODBCAttachFunction()
 }
 
 static unique_ptr<FunctionData> QueryBind(ClientContext &context, TableFunctionBindInput &input,
-                                       vector<LogicalType> &return_types, vector<string> &names) {
+                                          vector<LogicalType> &return_types, vector<string> &names) {
     auto result = make_uniq<ODBCBindData>();
-    
+
+    // NULL checks
     if (input.inputs[0].IsNull() || input.inputs[1].IsNull()) {
         throw BinderException("Parameters to odbc_query cannot be NULL");
     }
-    
-    // First parameter is either DSN or connection string
+
+    // Parse connection info
     auto conn_str = input.inputs[0].GetValue<string>();
-    
-    // Check if it's a DSN or connection string
     if (conn_str.find('=') == string::npos) {
-        // Likely a DSN
         result->dsn = conn_str;
-        
-        // Check for optional username and password
         if (input.inputs.size() >= 3) {
             result->username = input.inputs[2].GetValue<string>();
         }
-        
         if (input.inputs.size() >= 4) {
             result->password = input.inputs[3].GetValue<string>();
         }
     } else {
-        // Connection string
         result->connection_string = conn_str;
     }
-    
-    // Second parameter is the SQL query
     result->sql = input.inputs[1].GetValue<string>();
-    
-    // Process additional parameters
+
+    // all_varchar flag
     for (auto &kv : input.named_parameters) {
         if (kv.first == "all_varchar") {
             result->all_varchar = BooleanValue::Get(kv.second);
         }
     }
-    
+
     try {
-        // Connect to ODBC data source
+        // 1) Connect
         NanodbcDB db;
         if (!result->dsn.empty()) {
             db = NanodbcDB::OpenWithDSN(result->dsn, result->username, result->password);
-        } else if (!result->connection_string.empty()) {
-            db = NanodbcDB::OpenWithConnectionString(result->connection_string);
         } else {
-            throw BinderException("No connection information provided");
+            db = NanodbcDB::OpenWithConnectionString(result->connection_string);
         }
-        
-        // Prepare statement to get column info
+
+        // 2) Prepare
         auto stmt = db.Prepare(result->sql);
         if (!stmt.IsOpen()) {
             throw BinderException("Failed to prepare query");
         }
-        
-        // Execute to get metadata
-        if (!stmt.Step()) {
-            // If no results, still need to get column metadata
-            auto column_count = stmt.GetColumnCount();
-            
-            for (idx_t i = 0; i < column_count; i++) {
-                auto column_name = stmt.GetName(i);
-                
-                // Get type information
-                SQLULEN column_size = 0;
-                SQLSMALLINT decimal_digits = 0;
-                SQLSMALLINT odbc_type = stmt.GetODBCType(i, &column_size, &decimal_digits);
-                
-                auto column_type = result->all_varchar ? LogicalType::VARCHAR : 
-                                GetDuckDBType(odbc_type, column_size, decimal_digits);
-                
-                names.push_back(column_name);
-                return_types.push_back(column_type);
-            }
-        } else {
-            // We have data, get metadata from the result set
-            auto column_count = stmt.GetColumnCount();
-            
-            for (idx_t i = 0; i < column_count; i++) {
-                auto column_name = stmt.GetName(i);
-                
-                // Get type information
-                SQLULEN column_size = 0;
-                SQLSMALLINT decimal_digits = 0;
-                SQLSMALLINT odbc_type = stmt.GetODBCType(i, &column_size, &decimal_digits);
-                
-                auto column_type = result->all_varchar ? LogicalType::VARCHAR : 
-                                GetDuckDBType(odbc_type, column_size, decimal_digits);
-                
-                names.push_back(column_name);
-                return_types.push_back(column_type);
-            }
+
+        // 3) Step once to populate metadata
+        bool has_data = stmt.Step();
+        auto column_count = stmt.GetColumnCount();
+
+        // 4) Pull column names/types
+        for (idx_t i = 0; i < column_count; i++) {
+            auto col_name = stmt.GetName(i);
+            SQLULEN size = 0;
+            SQLSMALLINT digits = 0;
+            SQLSMALLINT odbc_type = stmt.GetODBCType(i, &size, &digits);
+
+            auto duck_type = result->all_varchar
+                             ? LogicalType::VARCHAR
+                             : GetDuckDBType(odbc_type, size, digits);
+
+            names.push_back(col_name);
+            return_types.push_back(duck_type);
         }
-        
-        if (names.empty()) {
-            throw BinderException("Query must return at least one column");
-        }
-        
-        result->names = names;
-        result->types = return_types;
-    } catch (const nanodbc::database_error& e) {
+
+    } catch (const nanodbc::database_error &e) {
         throw BinderException("ODBC error during query bind: " + NanodbcUtils::HandleException(e));
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         throw BinderException(e.what());
     }
-    
+
+    result->names = names;
+    result->types = return_types;
     return std::move(result);
 }
 
