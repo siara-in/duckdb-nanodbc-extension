@@ -82,17 +82,18 @@ message(STATUS "CMake generator: ${CMAKE_GENERATOR}")
 message(STATUS "Using local nanodbc headers from: src/nanodbc")
 
 # Nanodbc library files
-set(NANODBC_SOURCES
-    src/nanodbc/nanodbc.cpp
-)
+# set(NANODBC_SOURCES
+#     src/nanodbc/nanodbc.cpp
+# )
 
 # Create a custom nanodbc library
-add_library(nanodbc STATIC ${NANODBC_SOURCES})
-target_link_libraries(nanodbc PRIVATE ${ODBC_LIBRARIES})
-target_include_directories(nanodbc PRIVATE ${ODBC_INCLUDE_DIRS})
+# add_library(nanodbc STATIC ${NANODBC_SOURCES})
+# target_link_libraries(nanodbc PRIVATE ${ODBC_LIBRARIES})
+# target_include_directories(nanodbc PRIVATE ${ODBC_INCLUDE_DIRS})
 
 # Extension sources
-set(EXTENSION_SOURCES 
+set(EXTENSION_SOURCES
+    src/nanodbc/nanodbc.cpp
     src/nanodbc_db.cpp
     src/nanodbc_stmt.cpp
     src/nanodbc_utils.cpp
@@ -100,13 +101,10 @@ set(EXTENSION_SOURCES
     src/nanodbc_extension.cpp
     src/odbc_exports.cpp)
 
-# Build the extension
+# set(ALL_SOURCES ${EXTENSION_SOURCES} ${NANODBC_SOURCES})
+# Build the extension with all sources
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
-build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
-
-# Link against ODBC libraries and nanodbc for our targets
-# target_link_libraries(${EXTENSION_NAME} PRIVATE ${ODBC_LIBRARIES} nanodbc)
-# target_link_libraries(${LOADABLE_EXTENSION_NAME} PRIVATE ${ODBC_LIBRARIES} nanodbc)
+# build_loadable_extension(${TARGET_NAME} " " ${ALL_SOURCES})
 
 # Install the extension
 install(
