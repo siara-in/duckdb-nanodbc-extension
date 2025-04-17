@@ -1,6 +1,5 @@
 {
   "dependencies": [
-    "nanodbc",
     {
       "name": "libiconv",
       "platform": "osx"

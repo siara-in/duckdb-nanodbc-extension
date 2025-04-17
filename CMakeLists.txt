@@ -10,9 +10,8 @@ project(${TARGET_NAME})
 
 # Include directories
 include_directories(src/include)
-
-# Find nanodbc package from vcpkg
-find_package(nanodbc CONFIG REQUIRED)
+# Include the local nanodbc headers
+include_directories(src/nanodbc)
 
 # Set global visibility settings to ensure symbols are exported correctly
 set(CMAKE_CXX_VISIBILITY_PRESET default)
@@ -79,7 +78,17 @@ include_directories(${ODBC_INCLUDE_DIRS})
 message(STATUS "Building for platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Processor architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 message(STATUS "CMake generator: ${CMAKE_GENERATOR}")
-message(STATUS "Using nanodbc from vcpkg")
+message(STATUS "Using local nanodbc headers from: src/nanodbc")
+
+# Nanodbc library files
+set(NANODBC_SOURCES
+    src/nanodbc/nanodbc.cpp
+)
+
+# Create a custom nanodbc library
+add_library(nanodbc STATIC ${NANODBC_SOURCES})
+target_link_libraries(nanodbc PRIVATE ${ODBC_LIBRARIES})
+target_include_directories(nanodbc PRIVATE ${ODBC_INCLUDE_DIRS})
 
 # Extension sources
 set(EXTENSION_SOURCES 
@@ -94,9 +103,9 @@ set(EXTENSION_SOURCES
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
-# Link against ODBC libraries and nanodbc for all targets
-target_link_libraries(${EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} ${ODBC_LIBRARIES} nanodbc)
+# Link against ODBC libraries and nanodbc for our targets
+# target_link_libraries(${EXTENSION_NAME} PRIVATE ${ODBC_LIBRARIES} nanodbc)
+# target_link_libraries(${LOADABLE_EXTENSION_NAME} PRIVATE ${ODBC_LIBRARIES} nanodbc)
 
 # Install the extension
 install(
