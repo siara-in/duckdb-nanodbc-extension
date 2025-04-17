@@ -57,6 +57,12 @@ else()
     
     message(STATUS "Found ODBC libraries: ${ODBC_LIBRARIES}")
     message(STATUS "Found ODBC includes: ${ODBC_INCLUDE_DIRS}")
+
+    # Add iconv to ODBC libraries on macOS
+    if(APPLE AND ICONV_LIBRARY)
+        list(APPEND ODBC_LIBRARIES ${ICONV_LIBRARY})
+        message(STATUS "Added iconv to ODBC libraries: ${ODBC_LIBRARIES}")
+    endif()
     
     # On Linux, make sure we're using the right linking flags
     if(UNIX AND NOT APPLE)
