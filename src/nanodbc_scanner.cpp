@@ -206,11 +206,11 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                 // Based on the output vector type, convert and fetch the data
                 switch (out_vec.GetType().id()) {
                     case LogicalTypeId::BOOLEAN: {
-                        FlatVector::GetData<bool>(out_vec)[out_idx] = result.get<bool>(col_idx);
+                        FlatVector::GetData<bool>(out_vec)[out_idx] = (result.get<int>(col_idx) != 0);
                         break;
                     }
                     case LogicalTypeId::TINYINT: {
-                        FlatVector::GetData<int8_t>(out_vec)[out_idx] = result.get<int8_t>(col_idx);
+                        FlatVector::GetData<int8_t>(out_vec)[out_idx] = static_cast<int8_t>(result.get<int>(col_idx));
                         break;
                     }
                     case LogicalTypeId::SMALLINT: {
