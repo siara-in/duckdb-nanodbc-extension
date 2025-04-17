@@ -12,6 +12,34 @@ project(${TARGET_NAME})
 include_directories(src/include)
 include_directories(src)
 
+# Set global visibility settings to ensure symbols are exported correctly
+set(CMAKE_CXX_VISIBILITY_PRESET default)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
+
+# Add explicit export definitions for odbc_init and odbc_version
+add_definitions(-DODBC_INIT_EXPORT)
+
+# macOS-specific settings
+if(APPLE)
+    # Support for Apple Silicon (ARM64)
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
+
+    # Find iconv on macOS (it's part of the system but needs explicit linking)
+    find_library(ICONV_LIBRARY NAMES iconv libiconv REQUIRED)
+    if(ICONV_LIBRARY)
+        message(STATUS "Found iconv library: ${ICONV_LIBRARY}")
+    else()
+        # On macOS, sometimes we need to add special handling for iconv
+        set(ICONV_LIBRARY "iconv")
+        message(STATUS "Using default iconv library")
+    endif()
+    
+    # Set RPATH for macOS to make sure libraries are found at runtime
+    set(CMAKE_INSTALL_RPATH "@loader_path")
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+    set(CMAKE_MACOSX_RPATH ON)
+endif()
+
 # Platform-specific handling for ODBC
 if(WIN32)
     # Windows ODBC is included in the SDK
