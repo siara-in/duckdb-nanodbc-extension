@@ -10,3 +10,16 @@ query I
 FROM odbc_query('DuckDB','SELECT 42 AS Answer');
 ----
 42
+
+# Confirm the extension can work with more than 2048 rows
+query I
+SELECT count(*) FROM odbc_query('DuckDB','WITH RECURSIVE seq(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n+1
+    FROM seq
+   WHERE n < 3000)
+SELECT n
+FROM seq;');
+----
+3000
