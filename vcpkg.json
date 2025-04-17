@@ -1,6 +1,10 @@
 {
   "dependencies": [
     {
+      "name": "unixodbc",
+      "platform": "!windows"
+    },
+    {
       "name": "libiconv",
       "platform": "osx"
     }
