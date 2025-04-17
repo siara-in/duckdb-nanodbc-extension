@@ -1,7 +1,7 @@
 #include "nanodbc_stmt.hpp"
 #include "nanodbc_db.hpp"
 #include "nanodbc_utils.hpp"
-#include "odbc_scanner.hpp"
+#include "nanodbc_scanner.hpp"
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/time.hpp"

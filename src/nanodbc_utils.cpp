@@ -6,14 +6,8 @@ std::string NanodbcUtils::HandleException(const nanodbc::database_error& e) {
     // Format and return the error message
     std::string message = e.what();
     
-    // Extract any ODBC-specific error information if available
-    if (e.native_error() != 0) {
-        message += StringUtil::Format(" [Native code: %d]", e.native_error());
-    }
-    
-    if (!e.state().empty()) {
-        message += StringUtil::Format(" [SQLState: %s]", e.state().c_str());
-    }
+    // nanodbc::database_error doesn't publicly expose native_error or state
+    // We can only access what's in the public interface, which is the message from what()
     
     return message;
 }
@@ -204,40 +198,21 @@ void NanodbcUtils::GetColumnMetadata(nanodbc::result& result, idx_t col_idx,
                                    SQLSMALLINT& type, SQLULEN& column_size, SQLSMALLINT& decimal_digits) {
     // Use nanodbc's metadata functions
     try {
-        // Nanodbc provides some metadata but not all
-        // For the data type, we need to get the column's C type
+        // Get the column data type
         type = result.column_datatype(col_idx);
         
-        // Get the column size using native ODBC calls
-        // Since nanodbc doesn't directly expose all metadata
-        SQLHSTMT native_stmt = result.native_statement_handle();
+        // Get the column size and decimal digits
+        column_size = 0;
+        decimal_digits = 0;
         
-        SQLCHAR column_name[256];
-        SQLSMALLINT name_length;
-        SQLSMALLINT data_type;
-        SQLULEN size;
-        SQLSMALLINT digits;
-        SQLSMALLINT nullable;
-        
-        SQLRETURN ret = SQLDescribeCol(
-            native_stmt, 
-            col_idx + 1,  // ODBC columns are 1-based
-            column_name, 
-            sizeof(column_name), 
-            &name_length, 
-            &data_type, 
-            &size, 
-            &digits, 
-            &nullable
-        );
-        
-        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-            // If native call fails, provide defaults
-            column_size = 0;
-            decimal_digits = 0;
-        } else {
-            column_size = size;
-            decimal_digits = digits;
+        // For some data types, we need additional metadata
+        if (type == SQL_NUMERIC || type == SQL_DECIMAL) {
+            column_size = result.column_size(col_idx);
+            decimal_digits = result.column_decimal_digits(col_idx);
+        } else if (type == SQL_CHAR || type == SQL_VARCHAR || type == SQL_WCHAR || type == SQL_WVARCHAR) {
+            column_size = result.column_size(col_idx);
+        } else if (type == SQL_BINARY || type == SQL_VARBINARY) {
+            column_size = result.column_size(col_idx);
         }
     } catch (const nanodbc::database_error& e) {
         throw std::runtime_error("Failed to get column metadata: " + HandleException(e));

@@ -167,7 +167,8 @@ std::vector<std::string> NanodbcDB::GetTables() {
         auto table_results = catalog.find_tables(std::string(), std::string(), std::string(), std::string("TABLE"));
         
         while (table_results.next()) {
-            std::string table_name = table_results.get<std::string>("TABLE_NAME");
+            // Use the table_name() method instead of get<std::string>()
+            std::string table_name = table_results.table_name();
             tables.push_back(table_name);
         }
     } catch (const nanodbc::database_error& e) {
@@ -188,11 +189,11 @@ void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
         std::vector<idx_t> not_null_columns;
         
         while (column_results.next()) {
-            std::string name = column_results.get<std::string>("COLUMN_NAME");
-            SQLSMALLINT data_type = column_results.get<SQLSMALLINT>("DATA_TYPE");
-            SQLULEN column_size = column_results.get<SQLULEN>("COLUMN_SIZE", 0);
-            SQLSMALLINT decimal_digits = column_results.get<SQLSMALLINT>("DECIMAL_DIGITS", 0);
-            SQLSMALLINT nullable = column_results.get<SQLSMALLINT>("NULLABLE");
+            std::string name = column_results.column_name();
+            SQLSMALLINT data_type = column_results.data_type();
+            SQLULEN column_size = column_results.column_size();
+            SQLSMALLINT decimal_digits = column_results.decimal_digits();
+            SQLSMALLINT nullable = column_results.nullable();
             
             LogicalType column_type;
             
@@ -221,7 +222,8 @@ void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
         std::vector<std::string> primary_keys;
         
         while (pk_results.next()) {
-            std::string pk_name = pk_results.get<std::string>("COLUMN_NAME");
+            // Use column_name() method instead of get<std::string>()
+            std::string pk_name = pk_results.column_name();
             primary_keys.push_back(pk_name);
         }
         

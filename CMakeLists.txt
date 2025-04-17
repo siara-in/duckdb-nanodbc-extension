@@ -97,7 +97,7 @@ set(EXTENSION_SOURCES
     src/nanodbc_stmt.cpp
     src/nanodbc_utils.cpp
     src/nanodbc_scanner.cpp
-    src/odbc_extension.cpp
+    src/nanodbc_extension.cpp
     src/odbc_exports.cpp)
 
 # Build the extension
