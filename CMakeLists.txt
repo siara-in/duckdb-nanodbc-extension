@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
+set(CMAKE_CXX_STANDARD 17)
 
 # Set extension name here
 set(TARGET_NAME odbc)
@@ -11,7 +12,7 @@ project(${TARGET_NAME})
 # Include directories
 include_directories(src/include)
 # Include the local nanodbc headers
-include_directories(src/nanodbc)
+include_directories(src)
 
 # Set global visibility settings to ensure symbols are exported correctly
 set(CMAKE_CXX_VISIBILITY_PRESET default)
