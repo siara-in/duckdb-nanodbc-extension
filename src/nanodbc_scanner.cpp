@@ -403,7 +403,7 @@ ODBCScanFunction::ODBCScanFunction()
     to_string = ODBCToString;
     get_bind_info = ODBCBindInfo;
     projection_pushdown = true;
-    named_parameters["all_varchar"] = LogicalType::BOOLEAN;
+    named_parameters["all_varchar"] = LogicalType(LogicalTypeId::BOOLEAN);
 }
 
 struct AttachFunctionData : public TableFunctionData {
@@ -453,7 +453,7 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunction
         }
     }
     
-    return_types.emplace_back(LogicalType::BOOLEAN);
+    return_types.emplace_back(LogicalType(LogicalTypeId::BOOLEAN));
     names.emplace_back("Success");
     return std::move(result);
 }
@@ -507,7 +507,7 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
 
 ODBCAttachFunction::ODBCAttachFunction()
     : TableFunction("odbc_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind) {
-    named_parameters["overwrite"] = LogicalType::BOOLEAN;
+    named_parameters["overwrite"] = LogicalType(LogicalTypeId::BOOLEAN);
 }
 
 static unique_ptr<FunctionData> QueryBind(ClientContext &context, TableFunctionBindInput &input,
@@ -624,7 +624,7 @@ ODBCQueryFunction::ODBCQueryFunction()
     : TableFunction("odbc_query", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ODBCScan, QueryBind,
                     ODBCInitGlobalState, ODBCInitLocalState) {
     projection_pushdown = false;  // Can't push projection to arbitrary queries
-    named_parameters["all_varchar"] = LogicalType::BOOLEAN;
+    named_parameters["all_varchar"] = LogicalType(LogicalTypeId::BOOLEAN);
 }
 
 } // namespace duckdb

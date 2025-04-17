@@ -30,10 +30,10 @@ static void LoadInternal(DatabaseInstance &instance) {
 
     // Add extension options
     auto &config = DBConfig::GetConfig(instance);
-    config.AddExtensionOption("odbc_all_varchar", "Load all ODBC columns as VARCHAR columns", LogicalType::BOOLEAN);
+    config.AddExtensionOption("odbc_all_varchar", "Load all ODBC columns as VARCHAR columns", LogicalType(LogicalTypeId::BOOLEAN));
     
     config.AddExtensionOption("odbc_debug_show_queries", "DEBUG SETTING: print all queries sent to ODBC to stdout",
-                              LogicalType::BOOLEAN, false, SetODBCDebugQueryPrint);
+                            LogicalType(LogicalTypeId::BOOLEAN), false, SetODBCDebugQueryPrint);
 }
 
 void OdbcExtension::Load(DuckDB &db) {

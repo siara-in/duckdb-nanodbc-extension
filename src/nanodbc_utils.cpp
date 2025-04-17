@@ -98,7 +98,7 @@ LogicalType NanodbcUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN colum
 #ifdef SQL_BOOLEAN
         case SQL_BOOLEAN:
 #endif
-            return LogicalType::BOOLEAN;
+            return LogicalType(LogicalTypeId::BOOLEAN);
             
         case SQL_TINYINT:
             return LogicalType::TINYINT;
