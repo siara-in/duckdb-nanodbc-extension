@@ -1,0 +1,25 @@
+# name: test/sql/odbc_connection.test
+# description: test odbc extension
+# group: [odbc]
+
+# Require statement will ensure this test is run with this extension loaded
+require odbc
+
+# Confirm the extension works with DSN
+query I
+FROM odbc_query('Driver={DuckDB Driver};Database=:memory:','SELECT 42 AS Answer');
+----
+42
+
+# Confirm the extension can work with more than 2048 rows
+query I
+SELECT count(*) FROM odbc_query('Driver={DuckDB Driver};Database=:memory:','WITH RECURSIVE seq(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n+1
+    FROM seq
+   WHERE n < 3000)
+SELECT n
+FROM seq;');
+----
+3000
