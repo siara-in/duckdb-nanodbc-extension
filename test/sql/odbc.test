@@ -7,13 +7,13 @@ require odbc
 
 # Confirm the extension works with DSN
 query I
-FROM odbc_query('DuckDB','SELECT 42 AS Answer');
+FROM odbc_query('DSN=DuckDB','SELECT 42 AS Answer');
 ----
 42
 
 # Confirm the extension can work with more than 2048 rows
 query I
-SELECT count(*) FROM odbc_query('DuckDB','WITH RECURSIVE seq(n) AS (
+SELECT count(*) FROM odbc_query('DSN=DuckDB','WITH RECURSIVE seq(n) AS (
   SELECT 1
   UNION ALL
   SELECT n+1
