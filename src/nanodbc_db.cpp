@@ -43,7 +43,7 @@ NanodbcDB NanodbcDB::OpenWithDSN(const string &dsn, const string &username, cons
         
         // Connect to ODBC data source
         if (username.empty() && password.empty()) {
-            db.conn = nanodbc::connection(dsn, timeout);
+            db.conn = nanodbc::connection(dsn, "", "", timeout);
         } else {
             db.conn = nanodbc::connection(dsn, username, password, timeout);
         }
@@ -166,7 +166,7 @@ std::vector<std::string> NanodbcDB::GetTables() {
     try {
         // Use nanodbc's catalog functions to get tables
         nanodbc::catalog catalog(conn);
-        auto table_results = catalog.find_tables(std::string(), std::string(), std::string(), std::string("TABLE"));
+        auto table_results = catalog.find_tables(std::string(), std::string("TABLE"), std::string(), std::string());
         
         while (table_results.next()) {
             // Use the table_name() method instead of get<std::string>()
@@ -185,7 +185,7 @@ void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
     try {
         // Get column information using nanodbc catalog
         nanodbc::catalog catalog(conn);
-        auto column_results = catalog.find_columns(std::string(), std::string(), table_name, std::string());
+        auto column_results = catalog.find_columns(std::string(), table_name, std::string(), std::string());
         
         idx_t column_index = 0;
         std::vector<idx_t> not_null_columns;
@@ -220,7 +220,7 @@ void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
         }
         
         // Get primary key information
-        auto pk_results = catalog.find_primary_keys(std::string(), std::string(), table_name);
+        auto pk_results = catalog.find_primary_keys(table_name, std::string(), std::string());
         std::vector<std::string> primary_keys;
         
         while (pk_results.next()) {
@@ -250,7 +250,7 @@ void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
 bool NanodbcDB::ColumnExists(const std::string &table_name, const std::string &column_name) {
     try {
         nanodbc::catalog catalog(conn);
-        auto column_results = catalog.find_columns(std::string(), std::string(), table_name, column_name);
+        auto column_results = catalog.find_columns(column_name, table_name, std::string(), std::string());
         
         return column_results.next();
     } catch (const nanodbc::database_error&) {
@@ -263,13 +263,13 @@ CatalogType NanodbcDB::GetEntryType(const std::string &name) {
         nanodbc::catalog catalog(conn);
         
         // Check if it's a table
-        auto table_results = catalog.find_tables(std::string(), std::string(), name, std::string("TABLE"));
+        auto table_results = catalog.find_tables(name, std::string("TABLE"), std::string(), std::string());
         if (table_results.next()) {
             return CatalogType::TABLE_ENTRY;
         }
         
         // Check if it's a view
-        auto view_results = catalog.find_tables(std::string(), std::string(), name, std::string("VIEW"));
+        auto view_results = catalog.find_tables(name, std::string("VIEW"), std::string(), std::string());
         if (view_results.next()) {
             return CatalogType::VIEW_ENTRY;
         }
