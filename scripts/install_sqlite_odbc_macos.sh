@@ -23,9 +23,9 @@ echo "Creating ODBC driver configuration in $HOMEBREW_ETC/odbcinst.ini"
 sudo touch $HOMEBREW_ETC/odbcinst.ini
 cat <<EOF | sudo tee $HOMEBREW_ETC/odbcinst.ini
 [ODBC Drivers]
-DuckDB Driver = Installed
+SQLite Driver = Installed
 
-[DuckDB Driver]
+[SQLite Driver]
 Driver = /opt/homebrew/Cellar/sqliteodbc/0.99991/lib/libsqlite3odbc.dylib
 EOF
 
@@ -33,8 +33,8 @@ EOF
 echo "Creating ODBC DSN configuration in $HOMEBREW_ETC/odbc.ini"
 sudo touch $HOMEBREW_ETC/odbc.ini
 cat <<EOF | sudo tee $HOMEBREW_ETC/odbc.ini
-[DuckDB]
-Driver = DuckDB Driver
+[SQLite]
+Driver = SQLite Driver
 Database = :memory:
 EOF
 
@@ -53,6 +53,6 @@ echo "ODBCINI=$HOMEBREW_ETC/odbc.ini" >> $GITHUB_ENV
 
 # Test the SQLite installation
 echo "===== Testing SQLite ODBC Driver ====="
-isql -v DuckDB || echo "Could not connect to DuckDB DSN, but continuing anyway"
+isql -v SQLite || echo "Could not connect to SQLite DSN, but continuing anyway"
 
 echo "===== SQLite ODBC Driver Installation Complete ====="
