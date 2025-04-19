@@ -1,25 +1,25 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "nanodbc_db.hpp"
-#include "nanodbc_headers.hpp"
+#include "odbc_db.hpp"
+#include "odbc_headers.hpp"
 
 namespace duckdb {
 
 struct ODBCBindData;
 
-class NanodbcStatement {
+class OdbcStatement {
 public:
-    NanodbcStatement();
-    NanodbcStatement(nanodbc::connection& conn, const std::string& query);
-    ~NanodbcStatement();
+    OdbcStatement();
+    OdbcStatement(nanodbc::connection& conn, const std::string& query);
+    ~OdbcStatement();
 
-    NanodbcStatement(NanodbcStatement &&other) noexcept;
-    NanodbcStatement &operator=(NanodbcStatement &&other) noexcept;
+    OdbcStatement(OdbcStatement &&other) noexcept;
+    OdbcStatement &operator=(OdbcStatement &&other) noexcept;
 
     // Forbid copying
-    NanodbcStatement(const NanodbcStatement &) = delete;
-    NanodbcStatement &operator=(const NanodbcStatement &) = delete;
+    OdbcStatement(const OdbcStatement &) = delete;
+    OdbcStatement &operator=(const OdbcStatement &) = delete;
 
     // Execute and fetch next row
     bool Step();
@@ -81,6 +81,6 @@ private:
 };
 
 // Define an alias for backward compatibility
-using ODBCStatement = NanodbcStatement;
+using ODBCStatement = OdbcStatement;
 
 } // namespace duckdb

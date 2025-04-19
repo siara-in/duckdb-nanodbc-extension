@@ -1,9 +1,9 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "nanodbc_db.hpp"
-#include "nanodbc_stmt.hpp"
-#include "nanodbc_headers.hpp"
+#include "odbc_db.hpp"
+#include "odbc_stmt.hpp"
+#include "odbc_headers.hpp"
 
 #include "duckdb/common/types/decimal.hpp"
 #include "duckdb/common/operator/decimal_cast_operators.hpp"
@@ -21,14 +21,14 @@ struct ODBCBindData : public TableFunctionData {
     std::vector<std::string> names;
     std::vector<LogicalType> types;
     bool all_varchar = false;
-    NanodbcDB *global_db = nullptr;
+    OdbcDB *global_db = nullptr;
     TableCatalogEntry *table = nullptr;
 };
 
 struct ODBCLocalState : public LocalTableFunctionState {
-    NanodbcDB *db;
-    NanodbcDB owned_db;
-    NanodbcStatement stmt;
+    OdbcDB *db;
+    OdbcDB owned_db;
+    OdbcStatement stmt;
     bool done = false;
     std::vector<column_t> column_ids;
     idx_t scan_count = 0;

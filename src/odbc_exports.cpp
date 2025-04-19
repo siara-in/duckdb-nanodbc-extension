@@ -1,5 +1,5 @@
 #include "duckdb.hpp"
-#include "nanodbc_headers.hpp"
+#include "odbc_headers.hpp"
 
 // Define the required symbols that seem to be missing
 // These would normally be exported by the ODBC driver manager

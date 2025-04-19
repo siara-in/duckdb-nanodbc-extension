@@ -1,5 +1,5 @@
-#include "nanodbc_scanner.hpp"
-#include "nanodbc_utils.hpp"
+#include "odbc_scanner.hpp"
+#include "odbc_utils.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/timestamp.hpp"
@@ -13,11 +13,11 @@
 namespace duckdb {
 
 LogicalType GetDuckDBType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits) {
-    return NanodbcUtils::TypeToLogicalType(odbc_type, column_size, decimal_digits);
+    return OdbcUtils::TypeToLogicalType(odbc_type, column_size, decimal_digits);
 }
 
 int GetODBCSQLType(const LogicalType &type) {
-    return NanodbcUtils::ToODBCType(type);
+    return OdbcUtils::ToODBCType(type);
 }
 
 static unique_ptr<FunctionData> ODBCBind(ClientContext &context, TableFunctionBindInput &input,
@@ -68,12 +68,12 @@ static unique_ptr<FunctionData> ODBCBind(ClientContext &context, TableFunctionBi
     }
     
     // Connect to data source and get table schema
-    NanodbcDB db;
+    OdbcDB db;
     try {
         if (!result->dsn.empty()) {
-            db = NanodbcDB::OpenWithDSN(result->dsn, result->username, result->password);
+            db = OdbcDB::OpenWithDSN(result->dsn, result->username, result->password);
         } else if (!result->connection_string.empty()) {
-            db = NanodbcDB::OpenWithConnectionString(result->connection_string);
+            db = OdbcDB::OpenWithConnectionString(result->connection_string);
         } else {
             throw BinderException("Either DSN or connection string must be provided for ODBC scan");
         }
@@ -96,7 +96,7 @@ static unique_ptr<FunctionData> ODBCBind(ClientContext &context, TableFunctionBi
         result->names = names;
         result->types = return_types;
     } catch (const nanodbc::database_error& e) {
-        throw BinderException("ODBC error during binding: " + NanodbcUtils::HandleException(e));
+        throw BinderException("ODBC error during binding: " + OdbcUtils::HandleException(e));
     } catch (const std::exception& e) {
         throw BinderException(e.what());
     }
@@ -118,9 +118,9 @@ ODBCInitLocalState(ExecutionContext &context, TableFunctionInitInput &input, Glo
         if (!result->db) {
             // Otherwise create a new connection
             if (!bind_data.dsn.empty()) {
-                result->owned_db = NanodbcDB::OpenWithDSN(bind_data.dsn, bind_data.username, bind_data.password);
+                result->owned_db = OdbcDB::OpenWithDSN(bind_data.dsn, bind_data.username, bind_data.password);
             } else if (!bind_data.connection_string.empty()) {
-                result->owned_db = NanodbcDB::OpenWithConnectionString(bind_data.connection_string);
+                result->owned_db = OdbcDB::OpenWithConnectionString(bind_data.connection_string);
             } else {
                 throw std::runtime_error("No connection information available");
             }
@@ -134,11 +134,11 @@ ODBCInitLocalState(ExecutionContext &context, TableFunctionInitInput &input, Glo
             auto col_names = StringUtil::Join(
                 result->column_ids.data(), result->column_ids.size(), ", ", [&](const idx_t column_id) {
                     return column_id == (column_t)-1 ? "NULL"
-                                                    : '"' + NanodbcUtils::SanitizeString(bind_data.names[column_id]) + '"';
+                                                    : '"' + OdbcUtils::SanitizeString(bind_data.names[column_id]) + '"';
                 });
                 
             sql = StringUtil::Format("SELECT %s FROM \"%s\"", col_names, 
-                                    NanodbcUtils::SanitizeString(bind_data.table_name));
+                                    OdbcUtils::SanitizeString(bind_data.table_name));
         } else {
             sql = bind_data.sql;
         }
@@ -146,7 +146,7 @@ ODBCInitLocalState(ExecutionContext &context, TableFunctionInitInput &input, Glo
         result->stmt = result->db->Prepare(sql.c_str());
         result->done = false;
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("ODBC error during initialization: " + NanodbcUtils::HandleException(e));
+        throw std::runtime_error("ODBC error during initialization: " + OdbcUtils::HandleException(e));
     } catch (const std::exception& e) {
         throw std::runtime_error(e.what());
     }
@@ -231,7 +231,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                         SQLSMALLINT odbc_type;
                         SQLULEN column_size;
                         SQLSMALLINT decimal_digits;
-                        NanodbcUtils::GetColumnMetadata(result, col_idx, odbc_type, column_size, decimal_digits);
+                        OdbcUtils::GetColumnMetadata(result, col_idx, odbc_type, column_size, decimal_digits);
                         
                         // Use backup values if needed
                         if (width == 0) width = column_size;
@@ -333,7 +333,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                         std::vector<char> blob_data;
                         bool isNull = false;
                         
-                        if (NanodbcUtils::ReadVarColumn(result, col_idx, isNull, blob_data)) {
+                        if (OdbcUtils::ReadVarColumn(result, col_idx, isNull, blob_data)) {
                             if (isNull) {
                                 FlatVector::Validity(out_vec).Set(out_idx, false);
                             } else if (blob_data.empty()) {
@@ -354,7 +354,7 @@ static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk
                 }
             }
         } catch (const nanodbc::database_error& e) {
-            throw std::runtime_error("ODBC error during data scan: " + NanodbcUtils::HandleException(e));
+            throw std::runtime_error("ODBC error during data scan: " + OdbcUtils::HandleException(e));
         } catch (const std::exception& e) {
             throw std::runtime_error(e.what());
         }
@@ -455,11 +455,11 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
     
     try {
         // Connect to the ODBC data source
-        NanodbcDB db;
+        OdbcDB db;
         if (!data.dsn.empty()) {
-            db = NanodbcDB::OpenWithDSN(data.dsn, data.username, data.password);
+            db = OdbcDB::OpenWithDSN(data.dsn, data.username, data.password);
         } else if (!data.connection_string.empty()) {
-            db = NanodbcDB::OpenWithConnectionString(data.connection_string);
+            db = OdbcDB::OpenWithConnectionString(data.connection_string);
         } else {
             throw std::runtime_error("No connection information provided");
         }
@@ -488,7 +488,7 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
         output.SetCardinality(1);
         output.SetValue(0, 0, Value::BOOLEAN(true));
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("ODBC error during attach: " + NanodbcUtils::HandleException(e));
+        throw std::runtime_error("ODBC error during attach: " + OdbcUtils::HandleException(e));
     } catch (const std::exception& e) {
         throw std::runtime_error(e.what());
     }
@@ -532,11 +532,11 @@ static unique_ptr<FunctionData> QueryBind(ClientContext &context, TableFunctionB
 
     try {
         // 1) Connect
-        NanodbcDB db;
+        OdbcDB db;
         if (!result->dsn.empty()) {
-            db = NanodbcDB::OpenWithDSN(result->dsn, result->username, result->password);
+            db = OdbcDB::OpenWithDSN(result->dsn, result->username, result->password);
         } else {
-            db = NanodbcDB::OpenWithConnectionString(result->connection_string);
+            db = OdbcDB::OpenWithConnectionString(result->connection_string);
         }
 
         // 2) Prepare
@@ -565,7 +565,7 @@ static unique_ptr<FunctionData> QueryBind(ClientContext &context, TableFunctionB
         }
 
     } catch (const nanodbc::database_error &e) {
-        throw BinderException("ODBC error during query bind: " + NanodbcUtils::HandleException(e));
+        throw BinderException("ODBC error during query bind: " + OdbcUtils::HandleException(e));
     } catch (const std::exception &e) {
         throw BinderException(e.what());
     }

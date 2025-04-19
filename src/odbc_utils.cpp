@@ -1,8 +1,8 @@
-#include "nanodbc_utils.hpp"
+#include "odbc_utils.hpp"
 
 namespace duckdb {
 
-std::string NanodbcUtils::HandleException(const nanodbc::database_error& e) {
+std::string OdbcUtils::HandleException(const nanodbc::database_error& e) {
     // Format and return the error message
     std::string message = e.what();
     
@@ -12,7 +12,7 @@ std::string NanodbcUtils::HandleException(const nanodbc::database_error& e) {
     return message;
 }
 
-std::string NanodbcUtils::TypeToString(SQLSMALLINT odbc_type) {
+std::string OdbcUtils::TypeToString(SQLSMALLINT odbc_type) {
     switch (odbc_type) {
         case SQL_CHAR:         return "CHAR";
         case SQL_VARCHAR:      return "VARCHAR";
@@ -41,11 +41,11 @@ std::string NanodbcUtils::TypeToString(SQLSMALLINT odbc_type) {
     }
 }
 
-std::string NanodbcUtils::SanitizeString(const std::string &input) {
+std::string OdbcUtils::SanitizeString(const std::string &input) {
     return StringUtil::Replace(input, "\"", "\"\"");
 }
 
-SQLSMALLINT NanodbcUtils::ToODBCType(const LogicalType &input) {
+SQLSMALLINT OdbcUtils::ToODBCType(const LogicalType &input) {
     switch (input.id()) {
         case LogicalTypeId::BOOLEAN:     return SQL_BIT;
         case LogicalTypeId::TINYINT:     return SQL_TINYINT;
@@ -72,7 +72,7 @@ SQLSMALLINT NanodbcUtils::ToODBCType(const LogicalType &input) {
     }
 }
 
-int NanodbcUtils::GetNanodbcType(const LogicalType& type) {
+int OdbcUtils::GetOdbcType(const LogicalType& type) {
     // Map DuckDB types to nanodbc-compatible C types
     switch (type.id()) {
         case LogicalTypeId::BOOLEAN:     return SQL_C_BIT;
@@ -92,7 +92,7 @@ int NanodbcUtils::GetNanodbcType(const LogicalType& type) {
     }
 }
 
-LogicalType NanodbcUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits) {
+LogicalType OdbcUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits) {
     switch (odbc_type) {
         case SQL_BIT:
 #ifdef SQL_BOOLEAN
@@ -153,7 +153,7 @@ LogicalType NanodbcUtils::TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN colum
     }
 }
 
-bool NanodbcUtils::IsBinaryType(SQLSMALLINT sqltype) {
+bool OdbcUtils::IsBinaryType(SQLSMALLINT sqltype) {
     switch (sqltype) {
     case SQL_BINARY:
     case SQL_VARBINARY:
@@ -163,7 +163,7 @@ bool NanodbcUtils::IsBinaryType(SQLSMALLINT sqltype) {
     return false;
 }
 
-bool NanodbcUtils::IsWideType(SQLSMALLINT sqltype) {
+bool OdbcUtils::IsWideType(SQLSMALLINT sqltype) {
     switch (sqltype) {
     case SQL_WCHAR:
     case SQL_WVARCHAR:
@@ -173,7 +173,7 @@ bool NanodbcUtils::IsWideType(SQLSMALLINT sqltype) {
     return false;
 }
 
-bool NanodbcUtils::ReadVarColumn(nanodbc::result& result, idx_t col_idx, bool& isNull, std::vector<char>& output) {
+bool OdbcUtils::ReadVarColumn(nanodbc::result& result, idx_t col_idx, bool& isNull, std::vector<char>& output) {
     isNull = false;
     output.clear();
     
@@ -194,7 +194,7 @@ bool NanodbcUtils::ReadVarColumn(nanodbc::result& result, idx_t col_idx, bool& i
     }
 }
 
-void NanodbcUtils::GetColumnMetadata(nanodbc::result& result, idx_t col_idx, 
+void OdbcUtils::GetColumnMetadata(nanodbc::result& result, idx_t col_idx, 
                                    SQLSMALLINT& type, SQLULEN& column_size, SQLSMALLINT& decimal_digits) {
     // Use nanodbc's metadata functions
     try {

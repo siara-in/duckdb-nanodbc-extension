@@ -2,8 +2,8 @@
 
 #include "odbc_extension.hpp"
 #include "duckdb.hpp"
-#include "nanodbc_db.hpp"
-#include "nanodbc_scanner.hpp"
+#include "odbc_db.hpp"
+#include "odbc_scanner.hpp"
 
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/main/extension_util.hpp"
@@ -12,7 +12,7 @@
 namespace duckdb {
 
 static void SetODBCDebugQueryPrint(ClientContext &context, SetScope scope, Value &parameter) {
-    NanodbcDB::DebugSetPrintQueries(BooleanValue::Get(parameter));
+    OdbcDB::DebugSetPrintQueries(BooleanValue::Get(parameter));
 }
 
 static void LoadInternal(DatabaseInstance &instance) {

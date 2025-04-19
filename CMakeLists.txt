@@ -80,11 +80,11 @@ set(NANODBC_SOURCES
 
 # Extension sources
 set(EXTENSION_SOURCES 
-    src/nanodbc_db.cpp
-    src/nanodbc_stmt.cpp
-    src/nanodbc_utils.cpp
-    src/nanodbc_scanner.cpp
-    src/nanodbc_extension.cpp
+    src/odbc_db.cpp
+    src/odbc_stmt.cpp
+    src/odbc_utils.cpp
+    src/odbc_scanner.cpp
+    src/odbc_extension.cpp
     src/odbc_exports.cpp)
 
 # Combined sources

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "nanodbc_headers.hpp"
+#include "odbc_headers.hpp"
 
 namespace duckdb {
 
@@ -12,31 +12,31 @@ struct ODBCOpenOptions {
 };
 
 // Forward declaration
-class NanodbcStatement;
+class OdbcStatement;
 
-class NanodbcDB {
+class OdbcDB {
 public:
-    NanodbcDB();
-    ~NanodbcDB();
+    OdbcDB();
+    ~OdbcDB();
 
-    NanodbcDB(NanodbcDB &&other) noexcept;
-    NanodbcDB &operator=(NanodbcDB &&other) noexcept;
+    OdbcDB(OdbcDB &&other) noexcept;
+    OdbcDB &operator=(OdbcDB &&other) noexcept;
 
     // Forbid copying
-    NanodbcDB(const NanodbcDB &) = delete;
-    NanodbcDB &operator=(const NanodbcDB &) = delete;
+    OdbcDB(const OdbcDB &) = delete;
+    OdbcDB &operator=(const OdbcDB &) = delete;
 
     // Open connection using DSN
-    static NanodbcDB OpenWithDSN(const std::string &dsn, const std::string &username = "",
+    static OdbcDB OpenWithDSN(const std::string &dsn, const std::string &username = "",
                               const std::string &password = "", const ODBCOpenOptions &options = ODBCOpenOptions());
 
     // Open connection using connection string
-    static NanodbcDB OpenWithConnectionString(const std::string &connection_string,
+    static OdbcDB OpenWithConnectionString(const std::string &connection_string,
                                            const ODBCOpenOptions &options = ODBCOpenOptions());
 
     // Prepare a statement
-    NanodbcStatement Prepare(const std::string &query);
-    bool TryPrepare(const std::string &query, NanodbcStatement &stmt);
+    OdbcStatement Prepare(const std::string &query);
+    bool TryPrepare(const std::string &query, OdbcStatement &stmt);
 
     // Execute a simple statement (no results)
     void Execute(const std::string &query);
@@ -74,6 +74,6 @@ private:
 };
 
 // Define an alias for backward compatibility
-using ODBCDB = NanodbcDB;
+using ODBCDB = OdbcDB;
 
 } // namespace duckdb

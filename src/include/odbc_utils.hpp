@@ -2,12 +2,12 @@
 
 #include "duckdb.hpp"
 #include "duckdb/common/string_util.hpp"
-#include "nanodbc_headers.hpp"
+#include "odbc_headers.hpp"
 #include <string>
 
 namespace duckdb {
 
-class NanodbcUtils {
+class OdbcUtils {
 public:
     // Handle nanodbc exceptions and convert to error message
     static std::string HandleException(const nanodbc::database_error& e);
@@ -34,7 +34,7 @@ public:
     static bool IsWideType(SQLSMALLINT sqltype);
     
     // Get nanodbc-compatible type for binding parameters
-    static int GetNanodbcType(const LogicalType& type);
+    static int GetOdbcType(const LogicalType& type);
     
     // Get metadata from nanodbc result
     static void GetColumnMetadata(nanodbc::result& result, idx_t col_idx, 
@@ -42,6 +42,6 @@ public:
 };
 
 // Define an alias for backward compatibility
-using ODBCUtils = NanodbcUtils;
+using ODBCUtils = OdbcUtils;
 
 } // namespace duckdb

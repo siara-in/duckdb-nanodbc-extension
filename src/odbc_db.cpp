@@ -1,6 +1,6 @@
-#include "nanodbc_db.hpp"
-#include "nanodbc_stmt.hpp"
-#include "nanodbc_utils.hpp"
+#include "odbc_db.hpp"
+#include "odbc_stmt.hpp"
+#include "odbc_utils.hpp"
 #include "duckdb/parser/column_list.hpp"
 #include "duckdb/parser/constraints/not_null_constraint.hpp"
 #include "duckdb/parser/constraints/unique_constraint.hpp"
@@ -9,22 +9,22 @@
 
 namespace duckdb {
 
-bool NanodbcDB::debug_print_queries = false;
+bool OdbcDB::debug_print_queries = false;
 
-NanodbcDB::NanodbcDB() : owner(false) {
+OdbcDB::OdbcDB() : owner(false) {
 }
 
-NanodbcDB::~NanodbcDB() {
+OdbcDB::~OdbcDB() {
     Close();
 }
 
-NanodbcDB::NanodbcDB(NanodbcDB &&other) noexcept {
+OdbcDB::OdbcDB(OdbcDB &&other) noexcept {
     conn = std::move(other.conn);
     owner = other.owner;
     other.owner = false;
 }
 
-NanodbcDB &NanodbcDB::operator=(NanodbcDB &&other) noexcept {
+OdbcDB &OdbcDB::operator=(OdbcDB &&other) noexcept {
     if (this != &other) {
         Close();
         conn = std::move(other.conn);
@@ -34,9 +34,9 @@ NanodbcDB &NanodbcDB::operator=(NanodbcDB &&other) noexcept {
     return *this;
 }
 
-NanodbcDB NanodbcDB::OpenWithDSN(const string &dsn, const string &username, const string &password, const ODBCOpenOptions &options) {
+OdbcDB OdbcDB::OpenWithDSN(const string &dsn, const string &username, const string &password, const ODBCOpenOptions &options) {
     try {
-        NanodbcDB db;
+        OdbcDB db;
         
         // Set connection timeout
         int timeout = std::stoi(options.connection_timeout);
@@ -63,13 +63,13 @@ NanodbcDB NanodbcDB::OpenWithDSN(const string &dsn, const string &username, cons
         db.owner = true;
         return db;
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("Failed to connect to DSN '" + dsn + "': " + NanodbcUtils::HandleException(e));
+        throw std::runtime_error("Failed to connect to DSN '" + dsn + "': " + OdbcUtils::HandleException(e));
     }
 }
 
-NanodbcDB NanodbcDB::OpenWithConnectionString(const string &connection_string, const ODBCOpenOptions &options) {
+OdbcDB OdbcDB::OpenWithConnectionString(const string &connection_string, const ODBCOpenOptions &options) {
     try {
-        NanodbcDB db;
+        OdbcDB db;
         
         // Set connection timeout
         int timeout = std::stoi(options.connection_timeout);
@@ -92,17 +92,17 @@ NanodbcDB NanodbcDB::OpenWithConnectionString(const string &connection_string, c
         db.owner = true;
         return db;
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("Failed to connect with connection string: " + NanodbcUtils::HandleException(e));
+        throw std::runtime_error("Failed to connect with connection string: " + OdbcUtils::HandleException(e));
     }
 }
 
-bool NanodbcDB::TryPrepare(const std::string &query, NanodbcStatement &stmt) {
+bool OdbcDB::TryPrepare(const std::string &query, OdbcStatement &stmt) {
     if (!IsOpen()) {
         return false;
     }
     try {
         // Prepare via statement constructor
-        stmt = NanodbcStatement(conn, query);
+        stmt = OdbcStatement(conn, query);
         return true;
     } catch (const nanodbc::database_error &) {
         return false;
@@ -111,24 +111,24 @@ bool NanodbcDB::TryPrepare(const std::string &query, NanodbcStatement &stmt) {
     }
 }
 
-NanodbcStatement NanodbcDB::Prepare(const std::string &query) {
-    NanodbcStatement stmt;
+OdbcStatement OdbcDB::Prepare(const std::string &query) {
+    OdbcStatement stmt;
     // First try the fast path
     if (!TryPrepare(query, stmt)) {
         // Fallback: rethrow any error to get the actual message
         try {
-            stmt = NanodbcStatement(conn, query);
+            stmt = OdbcStatement(conn, query);
         } catch (const nanodbc::database_error &e) {
             throw std::runtime_error(
                 "Failed to prepare query \"" + query + "\": " +
-                NanodbcUtils::HandleException(e)
+                OdbcUtils::HandleException(e)
             );
         }
     }
     return stmt;
 }
 
-void NanodbcDB::Execute(const string &query) {
+void OdbcDB::Execute(const string &query) {
     if (debug_print_queries) {
         printf("ODBC Query: %s\n", query.c_str());
     }
@@ -136,15 +136,15 @@ void NanodbcDB::Execute(const string &query) {
     try {
         nanodbc::just_execute(conn, query);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("Failed to execute query \"" + query + "\": " + NanodbcUtils::HandleException(e));
+        throw std::runtime_error("Failed to execute query \"" + query + "\": " + OdbcUtils::HandleException(e));
     }
 }
 
-bool NanodbcDB::IsOpen() const {
+bool OdbcDB::IsOpen() const {
     return conn.connected();
 }
 
-void NanodbcDB::Close() {
+void OdbcDB::Close() {
     if (!owner) {
         return;
     }
@@ -160,7 +160,7 @@ void NanodbcDB::Close() {
     owner = false;
 }
 
-std::vector<std::string> NanodbcDB::GetTables() {
+std::vector<std::string> OdbcDB::GetTables() {
     std::vector<std::string> tables;
     
     try {
@@ -174,13 +174,13 @@ std::vector<std::string> NanodbcDB::GetTables() {
             tables.push_back(table_name);
         }
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("Failed to get table list: " + NanodbcUtils::HandleException(e));
+        throw std::runtime_error("Failed to get table list: " + OdbcUtils::HandleException(e));
     }
     
     return tables;
 }
 
-void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns, 
+void OdbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns, 
                            std::vector<std::unique_ptr<Constraint>> &constraints, bool all_varchar) {
     try {
         // Get column information using nanodbc catalog
@@ -202,7 +202,7 @@ void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
             if (all_varchar) {
                 column_type = LogicalType::VARCHAR;
             } else {
-                column_type = NanodbcUtils::TypeToLogicalType(data_type, column_size, decimal_digits);
+                column_type = OdbcUtils::TypeToLogicalType(data_type, column_size, decimal_digits);
             }
             
             ColumnDefinition column(std::move(name), column_type);
@@ -243,11 +243,11 @@ void NanodbcDB::GetTableInfo(const std::string &table_name, ColumnList &columns,
             }
         }
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error("Failed to get table info for '" + table_name + "': " + NanodbcUtils::HandleException(e));
+        throw std::runtime_error("Failed to get table info for '" + table_name + "': " + OdbcUtils::HandleException(e));
     }
 }
 
-bool NanodbcDB::ColumnExists(const std::string &table_name, const std::string &column_name) {
+bool OdbcDB::ColumnExists(const std::string &table_name, const std::string &column_name) {
     try {
         nanodbc::catalog catalog(conn);
         auto column_results = catalog.find_columns(column_name, table_name, std::string(), std::string());
@@ -258,7 +258,7 @@ bool NanodbcDB::ColumnExists(const std::string &table_name, const std::string &c
     }
 }
 
-CatalogType NanodbcDB::GetEntryType(const std::string &name) {
+CatalogType OdbcDB::GetEntryType(const std::string &name) {
     try {
         nanodbc::catalog catalog(conn);
         
@@ -280,7 +280,7 @@ CatalogType NanodbcDB::GetEntryType(const std::string &name) {
     return CatalogType::INVALID;
 }
 
-void NanodbcDB::DebugSetPrintQueries(bool print) {
+void OdbcDB::DebugSetPrintQueries(bool print) {
     debug_print_queries = print;
 }
 
