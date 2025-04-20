@@ -41,7 +41,4 @@ public:
                                 SQLSMALLINT& type, SQLULEN& column_size, SQLSMALLINT& decimal_digits);
 };
 
-// Define an alias for backward compatibility
-using ODBCUtils = OdbcUtils;
-
 } // namespace duckdb

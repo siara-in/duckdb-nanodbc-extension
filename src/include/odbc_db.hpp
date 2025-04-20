@@ -73,7 +73,4 @@ private:
     static bool debug_print_queries;
 };
 
-// Define an alias for backward compatibility
-using ODBCDB = OdbcDB;
-
 } // namespace duckdb

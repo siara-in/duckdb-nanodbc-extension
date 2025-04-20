@@ -80,7 +80,5 @@ private:
     bool executed = false;
 };
 
-// Define an alias for backward compatibility
-using ODBCStatement = OdbcStatement;
 
 } // namespace duckdb
