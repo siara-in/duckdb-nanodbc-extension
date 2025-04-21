@@ -1,44 +1,41 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "duckdb/common/string_util.hpp"
 #include "odbc_headers.hpp"
 #include <string>
+#include <unordered_map>
 
 namespace duckdb {
 
 class OdbcUtils {
 public:
-    // Handle nanodbc exceptions and convert to error message
-    static std::string HandleException(const nanodbc::database_error& e);
+    // Format error messages from nanodbc exceptions
+    static std::string FormatError(const std::string& operation, const nanodbc::database_error& e);
     
     // Convert ODBC type to string representation
-    static std::string TypeToString(SQLSMALLINT odbc_type);
+    static std::string TypeToString(SQLSMALLINT odbcType);
     
-    // Sanitize string for ODBC usage
+    // Sanitize string for ODBC usage (escape quotes)
     static std::string SanitizeString(const std::string& input);
     
     // Convert DuckDB type to ODBC type
-    static SQLSMALLINT ToODBCType(const LogicalType& input);
+    static SQLSMALLINT ToOdbcType(const LogicalType& type);
     
     // Convert ODBC type to DuckDB LogicalType
-    static LogicalType TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits);
-
-    // Method for reading variable-length data from nanodbc result
-    static bool ReadVarColumn(nanodbc::result& result, idx_t col_idx, bool& isNull, std::vector<char>& output);
-
+    static LogicalType ToLogicalType(SQLSMALLINT odbcType, SQLULEN columnSize, SQLSMALLINT decimalDigits);
+    
     // Helper to determine if a type is binary
-    static bool IsBinaryType(SQLSMALLINT sqltype);
-
+    static bool IsBinaryType(SQLSMALLINT sqlType);
+    
     // Helper to determine if a type is wide (Unicode)
-    static bool IsWideType(SQLSMALLINT sqltype);
+    static bool IsWideType(SQLSMALLINT sqlType);
     
-    // Get nanodbc-compatible type for binding parameters
-    static int GetOdbcType(const LogicalType& type);
+    // Read variable length column data from nanodbc result
+    static bool ReadVarData(nanodbc::result& result, idx_t colIdx, bool& isNull, std::vector<char>& output);
     
-    // Get metadata from nanodbc result
-    static void GetColumnMetadata(nanodbc::result& result, idx_t col_idx, 
-                                SQLSMALLINT& type, SQLULEN& column_size, SQLSMALLINT& decimal_digits);
+    // Get column metadata from nanodbc result
+    static void GetColumnMetadata(nanodbc::result& result, idx_t colIdx, 
+                                 SQLSMALLINT& type, SQLULEN& columnSize, SQLSMALLINT& decimalDigits);
 };
 
 } // namespace duckdb
