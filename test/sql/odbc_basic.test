@@ -1,0 +1,35 @@
+# name: test/sql/odbc_basic.test
+# description: Basic ODBC extension tests
+# group: [odbc]
+
+# Make sure the extension is loaded
+require odbc
+
+# Set up a connection variable that will work on different platforms
+statement ok
+SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'SQLite' ELSE 'DuckDB' END FROM pragma_platform());
+
+# Basic query test
+query I
+SELECT * FROM odbc_query(getvariable('odbc_connection'), 'SELECT 42 AS answer');
+----
+42
+
+# Test multiple columns
+query II
+SELECT * FROM odbc_query(getvariable('odbc_connection'), 'SELECT 1 AS a, 2 AS b');
+----
+1
+2
+
+# Test string data
+query T
+SELECT * FROM odbc_query(getvariable('odbc_connection'), 'SELECT ''hello world'' AS greeting');
+----
+hello world
+
+# Test NULL values
+query I
+SELECT * FROM odbc_query(getvariable('odbc_connection'), 'SELECT NULL AS null_value');
+----
+NULL
