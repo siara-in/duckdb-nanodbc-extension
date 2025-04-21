@@ -6,16 +6,12 @@
 
 namespace duckdb {
 
-OdbcStatement::OdbcStatement() : hasResult(false), executed(false) {
-}
-
-OdbcStatement::OdbcStatement(nanodbc::connection &conn, const std::string &query)
-    : hasResult(false), executed(false) {
+OdbcStatement::OdbcStatement(nanodbc::connection &conn, const std::string &query) : has_result(false), executed(false) {
     try {
         // Prepare the statement
         stmt = nanodbc::statement(conn, query);
     } catch (const nanodbc::database_error &e) {
-        throw std::runtime_error(OdbcUtils::FormatError("prepare statement", e));
+        OdbcUtils::ThrowException("prepare statement", e);
     }
 }
 
@@ -24,14 +20,12 @@ OdbcStatement::~OdbcStatement() {
 }
 
 OdbcStatement::OdbcStatement(OdbcStatement &&other) noexcept
-    : stmt(std::move(other.stmt)),
-      result(std::move(other.result)),
-      hasResult(other.hasResult),
-      executed(other.executed) {
+    : stmt(std::move(other.stmt))
+    , result(std::move(other.result))
+    , has_result(other.has_result)
+    , executed(other.executed) {
     // Reset the moved-from instance
-    other.stmt = nanodbc::statement();
-    other.result = nanodbc::result();
-    other.hasResult = false;
+    other.has_result = false;
     other.executed = false;
 }
 
@@ -42,12 +36,10 @@ OdbcStatement &OdbcStatement::operator=(OdbcStatement &&other) noexcept {
         // Move in the new handles
         stmt = std::move(other.stmt);
         result = std::move(other.result);
-        hasResult = other.hasResult;
+        has_result = other.has_result;
         executed = other.executed;
         // Reset the moved-from object
-        other.stmt = nanodbc::statement();
-        other.result = nanodbc::result();
-        other.hasResult = false;
+        other.has_result = false;
         other.executed = false;
     }
     return *this;
@@ -57,18 +49,20 @@ bool OdbcStatement::Step() {
     if (!IsOpen()) {
         return false;
     }
+    
     try {
         // On the first call, execute; on subsequent calls, advance the cursor
         if (!executed) {
             result = stmt.execute();
             executed = true;
-            hasResult = true;
+            has_result = true;
         }
         
         // The first call to next() moves to the first row
         return result.next();
     } catch (const nanodbc::database_error &e) {
-        throw std::runtime_error(OdbcUtils::FormatError("execute statement", e));
+        OdbcUtils::ThrowException("execute statement", e);
+        return false; // Won't reach here due to exception
     }
 }
 
@@ -76,10 +70,10 @@ void OdbcStatement::Reset() {
     if (IsOpen()) {
         try {
             stmt.close();
-            hasResult = false;
+            has_result = false;
             executed = false;
         } catch (const nanodbc::database_error& e) {
-            throw std::runtime_error(OdbcUtils::FormatError("reset statement", e));
+            OdbcUtils::ThrowException("reset statement", e);
         }
     }
 }
@@ -88,7 +82,7 @@ void OdbcStatement::Close() {
     if (IsOpen()) {
         try {
             stmt.close();
-            hasResult = false;
+            has_result = false;
             executed = false;
         } catch (...) {
             // Ignore exceptions during close
@@ -102,7 +96,7 @@ bool OdbcStatement::IsOpen() const {
 
 SQLSMALLINT OdbcStatement::GetOdbcType(idx_t colIdx, SQLULEN* columnSize, SQLSMALLINT* decimalDigits) {
     if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
+        throw BinderException("Statement is not open");
     }
     
     try {
@@ -110,7 +104,7 @@ SQLSMALLINT OdbcStatement::GetOdbcType(idx_t colIdx, SQLULEN* columnSize, SQLSMA
             // Execute to get metadata
             result = stmt.execute();
             executed = true;
-            hasResult = true;
+            has_result = true;
         }
         
         SQLSMALLINT dataType;
@@ -126,13 +120,14 @@ SQLSMALLINT OdbcStatement::GetOdbcType(idx_t colIdx, SQLULEN* columnSize, SQLSMA
         
         return dataType;
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get column type", e));
+        OdbcUtils::ThrowException("get column type", e);
+        return SQL_UNKNOWN_TYPE; // Won't reach here due to exception
     }
 }
 
 std::string OdbcStatement::GetName(idx_t colIdx) {
     if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
+        throw BinderException("Statement is not open");
     }
     
     try {
@@ -140,18 +135,19 @@ std::string OdbcStatement::GetName(idx_t colIdx) {
             // Execute to get metadata
             result = stmt.execute();
             executed = true;
-            hasResult = true;
+            has_result = true;
         }
         
         return result.column_name(colIdx);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get column name", e));
+        OdbcUtils::ThrowException("get column name", e);
+        return std::string(); // Won't reach here due to exception
     }
 }
 
 idx_t OdbcStatement::GetColumnCount() {
     if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
+        throw BinderException("Statement is not open");
     }
     
     try {
@@ -159,49 +155,27 @@ idx_t OdbcStatement::GetColumnCount() {
             // Execute to get metadata
             result = stmt.execute();
             executed = true;
-            hasResult = true;
+            has_result = true;
         }
         
         return result.columns();
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get column count", e));
+        OdbcUtils::ThrowException("get column count", e);
+        return 0; // Won't reach here due to exception
     }
 }
 
-SQLLEN OdbcStatement::GetValueLength(idx_t colIdx) {
-    if (!IsOpen() || !hasResult) {
-        throw std::runtime_error("Statement is not open or no result available");
+bool OdbcStatement::IsNull(idx_t colIdx) const {
+    if (!has_result) {
+        throw BinderException("No result available");
     }
     
-    try {
-        if (result.is_null(colIdx)) {
-            return SQL_NULL_DATA;
-        }
-        
-        SQLSMALLINT type;
-        SQLULEN columnSize;
-        SQLSMALLINT decimalDigits;
-        OdbcUtils::GetColumnMetadata(result, colIdx, type, columnSize, decimalDigits);
-        
-        // For variable length data like strings and blobs
-        if (OdbcUtils::IsBinaryType(type) || type == SQL_VARCHAR || type == SQL_CHAR || 
-            type == SQL_WVARCHAR || type == SQL_WCHAR) {
-            std::string value = result.get<std::string>(colIdx);
-            return value.length();
-        }
-        
-        // For fixed length data, return the column size
-        return columnSize;
-    } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get value length", e));
-    }
+    return result.is_null(colIdx);
 }
 
-// Template specializations for GetValue
-template <>
-std::string OdbcStatement::GetValue(idx_t colIdx) {
-    if (!IsOpen() || !hasResult) {
-        throw std::runtime_error("Statement is not open or no result available");
+std::string OdbcStatement::GetString(idx_t colIdx) {
+    if (!has_result) {
+        throw BinderException("No result available");
     }
     
     try {
@@ -211,14 +185,14 @@ std::string OdbcStatement::GetValue(idx_t colIdx) {
         
         return result.get<std::string>(colIdx);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get string value", e));
+        OdbcUtils::ThrowException("get string value", e);
+        return std::string(); // Won't reach here due to exception
     }
 }
 
-template <>
-int OdbcStatement::GetValue(idx_t colIdx) {
-    if (!IsOpen() || !hasResult) {
-        throw std::runtime_error("Statement is not open or no result available");
+int32_t OdbcStatement::GetInt32(idx_t colIdx) {
+    if (!has_result) {
+        throw BinderException("No result available");
     }
     
     try {
@@ -226,16 +200,16 @@ int OdbcStatement::GetValue(idx_t colIdx) {
             return 0;
         }
         
-        return result.get<int>(colIdx);
+        return result.get<int32_t>(colIdx);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get int value", e));
+        OdbcUtils::ThrowException("get int32 value", e);
+        return 0; // Won't reach here due to exception
     }
 }
 
-template <>
-int64_t OdbcStatement::GetValue(idx_t colIdx) {
-    if (!IsOpen() || !hasResult) {
-        throw std::runtime_error("Statement is not open or no result available");
+int64_t OdbcStatement::GetInt64(idx_t colIdx) {
+    if (!has_result) {
+        throw BinderException("No result available");
     }
     
     try {
@@ -245,14 +219,14 @@ int64_t OdbcStatement::GetValue(idx_t colIdx) {
         
         return result.get<int64_t>(colIdx);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get int64 value", e));
+        OdbcUtils::ThrowException("get int64 value", e);
+        return 0; // Won't reach here due to exception
     }
 }
 
-template <>
-double OdbcStatement::GetValue(idx_t colIdx) {
-    if (!IsOpen() || !hasResult) {
-        throw std::runtime_error("Statement is not open or no result available");
+double OdbcStatement::GetDouble(idx_t colIdx) {
+    if (!has_result) {
+        throw BinderException("No result available");
     }
     
     try {
@@ -262,14 +236,14 @@ double OdbcStatement::GetValue(idx_t colIdx) {
         
         return result.get<double>(colIdx);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get double value", e));
+        OdbcUtils::ThrowException("get double value", e);
+        return 0.0; // Won't reach here due to exception
     }
 }
 
-template <>
-timestamp_t OdbcStatement::GetValue(idx_t colIdx) {
-    if (!IsOpen() || !hasResult) {
-        throw std::runtime_error("Statement is not open or no result available");
+timestamp_t OdbcStatement::GetTimestamp(idx_t colIdx) {
+    if (!has_result) {
+        throw BinderException("No result available");
     }
     
     try {
@@ -286,143 +260,124 @@ timestamp_t OdbcStatement::GetValue(idx_t colIdx) {
         dtime_t time = Time::FromTime(ts.hour, ts.min, ts.sec, ts.fract / 1000000);
         return Timestamp::FromDatetime(date, time);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("get timestamp value", e));
+        OdbcUtils::ThrowException("get timestamp value", e);
+        return Timestamp::FromEpochSeconds(0); // Won't reach here due to exception
     }
 }
 
-// Template specializations for Bind
-template <>
-void OdbcStatement::Bind(idx_t colIdx, int value) {
+void OdbcStatement::BindNull(idx_t colIdx) {
     if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
-    }
-    
-    try {
-        stmt.bind(colIdx, &value);
-    } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("bind int parameter", e));
-    }
-}
-
-template <>
-void OdbcStatement::Bind(idx_t colIdx, int64_t value) {
-    if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
-    }
-    
-    try {
-        stmt.bind(colIdx, &value);
-    } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("bind int64 parameter", e));
-    }
-}
-
-template <>
-void OdbcStatement::Bind(idx_t colIdx, double value) {
-    if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
-    }
-    
-    try {
-        stmt.bind(colIdx, &value);
-    } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("bind double parameter", e));
-    }
-}
-
-template <>
-void OdbcStatement::Bind(idx_t colIdx, std::nullptr_t) {
-    if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
+        throw BinderException("Statement is not open");
     }
     
     try {
         stmt.bind_null(colIdx);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("bind null parameter", e));
+        OdbcUtils::ThrowException("bind null parameter", e);
     }
 }
 
-void OdbcStatement::BindBlob(idx_t colIdx, const string_t &value) {
+void OdbcStatement::BindInt32(idx_t colIdx, int32_t value) {
     if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
+        throw BinderException("Statement is not open");
     }
     
     try {
-        // Bind binary data
-        stmt.bind(colIdx, value.GetDataUnsafe(), value.GetSize());
+        stmt.bind(colIdx, &value);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("bind blob parameter", e));
+        OdbcUtils::ThrowException("bind int32 parameter", e);
     }
 }
 
-void OdbcStatement::BindText(idx_t colIdx, const string_t &value) {
+void OdbcStatement::BindInt64(idx_t colIdx, int64_t value) {
     if (!IsOpen()) {
-        throw std::runtime_error("Statement is not open");
+        throw BinderException("Statement is not open");
     }
     
     try {
-        std::string str(value.GetDataUnsafe(), value.GetSize());
-        stmt.bind(colIdx, str.c_str());
+        stmt.bind(colIdx, &value);
     } catch (const nanodbc::database_error& e) {
-        throw std::runtime_error(OdbcUtils::FormatError("bind text parameter", e));
+        OdbcUtils::ThrowException("bind int64 parameter", e);
+    }
+}
+
+void OdbcStatement::BindDouble(idx_t colIdx, double value) {
+    if (!IsOpen()) {
+        throw BinderException("Statement is not open");
+    }
+    
+    try {
+        stmt.bind(colIdx, &value);
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("bind double parameter", e);
+    }
+}
+
+void OdbcStatement::BindString(idx_t colIdx, const std::string& value) {
+    if (!IsOpen()) {
+        throw BinderException("Statement is not open");
+    }
+    
+    try {
+        stmt.bind(colIdx, value.c_str());
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("bind string parameter", e);
+    }
+}
+
+void OdbcStatement::BindBlob(idx_t colIdx, const char* data, size_t size) {
+    if (!IsOpen()) {
+        throw BinderException("Statement is not open");
+    }
+    
+    try {
+        stmt.bind(colIdx, data, size);
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("bind blob parameter", e);
     }
 }
 
 void OdbcStatement::BindValue(Vector &col, idx_t colIdx, idx_t rowIdx) {
     auto &mask = FlatVector::Validity(col);
     if (!mask.RowIsValid(rowIdx)) {
-        Bind<std::nullptr_t>(colIdx, nullptr);
-    } else {
-        switch (col.GetType().id()) {
-            case LogicalTypeId::BIGINT:
-                Bind<int64_t>(colIdx, FlatVector::GetData<int64_t>(col)[rowIdx]);
-                break;
-            case LogicalTypeId::INTEGER:
-                Bind<int>(colIdx, FlatVector::GetData<int>(col)[rowIdx]);
-                break;
-            case LogicalTypeId::DOUBLE:
-                Bind<double>(colIdx, FlatVector::GetData<double>(col)[rowIdx]);
-                break;
-            case LogicalTypeId::BLOB:
-                BindBlob(colIdx, FlatVector::GetData<string_t>(col)[rowIdx]);
-                break;
-            case LogicalTypeId::VARCHAR:
-                BindText(colIdx, FlatVector::GetData<string_t>(col)[rowIdx]);
-                break;
-            default:
-                throw std::runtime_error("Unsupported type for binding: " + col.GetType().ToString());
-        }
-    }
-}
-
-void OdbcStatement::ValidateType(SQLLEN indicator, SQLSMALLINT odbcType, SQLSMALLINT expectedType, idx_t colIdx) {
-    if (indicator == SQL_NULL_DATA) {
-        // Null values don't need type checking
+        BindNull(colIdx);
         return;
     }
     
-    if (odbcType != expectedType) {
-        std::string columnName = GetName(colIdx);
-        std::string message = "Invalid type in column \"" + columnName + "\": column was declared as " +
-                            OdbcUtils::TypeToString(expectedType) + ", found " +
-                            OdbcUtils::TypeToString(odbcType) + " instead.";
-        message += "\n* SET odbc_all_varchar=true to load all columns as VARCHAR "
-                "and skip type conversions";
-        throw std::runtime_error(message);
-    }
-}
-
-void OdbcStatement::ValidateNumericType(SQLSMALLINT odbcType, idx_t colIdx) {
-    if (odbcType != SQL_FLOAT && odbcType != SQL_DOUBLE && odbcType != SQL_REAL &&
-        odbcType != SQL_INTEGER && odbcType != SQL_SMALLINT && odbcType != SQL_TINYINT && 
-        odbcType != SQL_BIGINT && odbcType != SQL_DECIMAL && odbcType != SQL_NUMERIC) {
-        std::string columnName = GetName(colIdx);
-        std::string message = "Invalid type in column \"" + columnName + "\": expected float or integer, found " +
-                            OdbcUtils::TypeToString(odbcType) + " instead.";
-        message += "\n* SET odbc_all_varchar=true to load all columns as VARCHAR "
-                "and skip type conversions";
-        throw std::runtime_error(message);
+    switch (col.GetType().id()) {
+        case LogicalTypeId::BOOLEAN:
+            BindInt32(colIdx, FlatVector::GetData<bool>(col)[rowIdx] ? 1 : 0);
+            break;
+        case LogicalTypeId::TINYINT:
+            BindInt32(colIdx, FlatVector::GetData<int8_t>(col)[rowIdx]);
+            break;
+        case LogicalTypeId::SMALLINT:
+            BindInt32(colIdx, FlatVector::GetData<int16_t>(col)[rowIdx]);
+            break;
+        case LogicalTypeId::INTEGER:
+            BindInt32(colIdx, FlatVector::GetData<int32_t>(col)[rowIdx]);
+            break;
+        case LogicalTypeId::BIGINT:
+            BindInt64(colIdx, FlatVector::GetData<int64_t>(col)[rowIdx]);
+            break;
+        case LogicalTypeId::FLOAT:
+            BindDouble(colIdx, FlatVector::GetData<float>(col)[rowIdx]);
+            break;
+        case LogicalTypeId::DOUBLE:
+            BindDouble(colIdx, FlatVector::GetData<double>(col)[rowIdx]);
+            break;
+        case LogicalTypeId::VARCHAR: {
+            auto str = FlatVector::GetData<string_t>(col)[rowIdx];
+            BindString(colIdx, std::string(str.GetString(), str.GetSize()));
+            break;
+        }
+        case LogicalTypeId::BLOB: {
+            auto blob = FlatVector::GetData<string_t>(col)[rowIdx];
+            BindBlob(colIdx, blob.GetDataUnsafe(), blob.GetSize());
+            break;
+        }
+        default:
+            throw BinderException("Unsupported type for binding: " + col.GetType().ToString());
     }
 }
 

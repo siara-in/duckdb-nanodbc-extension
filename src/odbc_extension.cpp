@@ -2,7 +2,6 @@
 
 #include "odbc_extension.hpp"
 #include "duckdb.hpp"
-#include "odbc_connection.hpp"
 #include "odbc_scanner.hpp"
 
 #include "duckdb/catalog/catalog.hpp"
@@ -11,21 +10,11 @@
 
 namespace duckdb {
 
-static void SetOdbcDebugPrintQueries(ClientContext &context, SetScope scope, Value &parameter) {
-    OdbcConnection::SetDebugPrintQueries(BooleanValue::Get(parameter));
-}
-
 static void RegisterOdbcFunctions(DatabaseInstance &instance) {
-    // Register all ODBC functions
-    std::vector<TableFunction> functions = {
-        OdbcScanFunction(),
-        OdbcAttachFunction(),
-        OdbcQueryFunction()
-    };
-    
-    for (auto& func : functions) {
-        ExtensionUtil::RegisterFunction(instance, func);
-    }
+    // Register each function separately to avoid copy issues
+    ExtensionUtil::RegisterFunction(instance, OdbcScanFunction());
+    ExtensionUtil::RegisterFunction(instance, OdbcAttachFunction());
+    ExtensionUtil::RegisterFunction(instance, OdbcQueryFunction());
 }
 
 static void LoadInternal(DatabaseInstance &instance) {
@@ -38,12 +27,6 @@ static void LoadInternal(DatabaseInstance &instance) {
     config.AddExtensionOption("odbc_all_varchar", 
                             "Load all ODBC columns as VARCHAR columns", 
                             LogicalType(LogicalTypeId::BOOLEAN));
-    
-    config.AddExtensionOption("odbc_debug_show_queries", 
-                            "DEBUG SETTING: print all queries sent to ODBC to stdout",
-                            LogicalType(LogicalTypeId::BOOLEAN), 
-                            false, 
-                            SetOdbcDebugPrintQueries);
 }
 
 void OdbcExtension::Load(DuckDB &db) {
