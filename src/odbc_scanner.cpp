@@ -250,7 +250,7 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                             SQLULEN size = 0;
                             SQLSMALLINT digits = 0;
                             SQLSMALLINT odbcType = stmt->GetOdbcType(i, &size, &digits);
-                            
+
                             auto duckType = result->all_varchar ? 
                                           LogicalType::VARCHAR : 
                                           OdbcUtils::OdbcTypeToLogicalType(odbcType, size, digits);
@@ -424,6 +424,39 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
                 }
                 case LogicalTypeId::DOUBLE: {
                     FlatVector::GetData<double>(out_vec)[out_idx] = state.statement->GetDouble(col_idx);
+                    break;
+                }
+                case LogicalTypeId::DECIMAL: {
+                    auto &decimal_type = out_vec.GetType();
+                    uint8_t width = DecimalType::GetWidth(decimal_type);
+                    uint8_t scale = DecimalType::GetScale(decimal_type);
+                    
+                    // Get the value as double first
+                    double decimal_val = state.statement->GetDouble(col_idx);
+                    
+                    // Scale the value based on decimal scale (multiply by 10^scale)
+                    double scaled_val = decimal_val * pow(10, scale);
+                    
+                    // Based on width, store in appropriate integer type
+                    if (width <= 4) {
+                        // Use int16 for small decimals
+                        int16_t val = (int16_t)round(scaled_val);
+                        FlatVector::GetData<int16_t>(out_vec)[out_idx] = val;
+                    } else if (width <= 9) {
+                        // Use int32 for medium decimals
+                        int32_t val = (int32_t)round(scaled_val);
+                        FlatVector::GetData<int32_t>(out_vec)[out_idx] = val;
+                    } else if (width <= 18) {
+                        // Use int64 for larger decimals
+                        int64_t val = (int64_t)round(scaled_val);
+                        FlatVector::GetData<int64_t>(out_vec)[out_idx] = val;
+                    } else {
+                        // For very large decimals, might need hugeint handling
+                        // This depends on how your DuckDB version handles large decimals
+                        // For simplicity, let's default to int64 here
+                        int64_t val = (int64_t)round(scaled_val);
+                        FlatVector::GetData<int64_t>(out_vec)[out_idx] = val;
+                    }
                     break;
                 }
                 case LogicalTypeId::VARCHAR: {
