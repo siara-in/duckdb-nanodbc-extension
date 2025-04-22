@@ -437,25 +437,22 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
                     // Scale the value based on decimal scale (multiply by 10^scale)
                     double scaled_val = decimal_val * pow(10, scale);
                     
-                    // Based on width, store in appropriate integer type
-                    if (width <= 4) {
-                        // Use int16 for small decimals
-                        int16_t val = (int16_t)round(scaled_val);
-                        FlatVector::GetData<int16_t>(out_vec)[out_idx] = val;
-                    } else if (width <= 9) {
-                        // Use int32 for medium decimals
-                        int32_t val = (int32_t)round(scaled_val);
-                        FlatVector::GetData<int32_t>(out_vec)[out_idx] = val;
-                    } else if (width <= 18) {
-                        // Use int64 for larger decimals
-                        int64_t val = (int64_t)round(scaled_val);
-                        FlatVector::GetData<int64_t>(out_vec)[out_idx] = val;
-                    } else {
-                        // For very large decimals, might need hugeint handling
-                        // This depends on how your DuckDB version handles large decimals
-                        // For simplicity, let's default to int64 here
-                        int64_t val = (int64_t)round(scaled_val);
-                        FlatVector::GetData<int64_t>(out_vec)[out_idx] = val;
+                    switch (decimal_type.InternalType()) {
+                        case PhysicalType::INT16:
+                            FlatVector::GetData<int16_t>(out_vec)[out_idx] = (int16_t)round(scaled_val);
+                            break;
+                        case PhysicalType::INT32:
+                            FlatVector::GetData<int32_t>(out_vec)[out_idx] = (int32_t)round(scaled_val);
+                            break;
+                        case PhysicalType::INT64:
+                            FlatVector::GetData<int64_t>(out_vec)[out_idx] = (int64_t)round(scaled_val);
+                            break;
+                        case PhysicalType::INT128:
+                            FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = (hugeint_t)round(scaled_val);
+                            break;
+                        default:
+                            FlatVector::Validity(out_vec).Set(out_idx, false);
+                            break;
                     }
                     break;
                 }

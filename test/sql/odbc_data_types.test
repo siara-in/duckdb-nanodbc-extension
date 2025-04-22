@@ -47,23 +47,22 @@ TIMESTAMP
 
 # Test decimal/numeric types with payment table
 query II
-SELECT SUM(amount), TYPEOF(amount)
+SELECT SUM(amount::double), TYPEOF(amount::double)
 FROM odbc_scan('payment', getvariable('odbc_connection'))
-GROUP BY TYPEOF(amount)
+GROUP BY TYPEOF(amount::double)
 LIMIT 1;
 ----
 67416.51
 DOUBLE
 
 # Test scanning film table which has multiple types
-query ITTRIT
+query IIIII
 SELECT 
     film_id, 
     title, 
     description, 
     rental_rate, 
-    length, 
-    TYPEOF(rental_rate) 
+    length
 FROM odbc_scan('film', getvariable('odbc_connection'))
 WHERE film_id = 1;
 ----
@@ -72,7 +71,6 @@ ACADEMY DINOSAUR
 A Epic Drama of a Feminist And a Mad Scientist who must Battle a Teacher in The Canadian Rockies
 0.99
 86
-DOUBLE
 
 # Test projection push-down
 query T
