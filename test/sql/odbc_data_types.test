@@ -145,12 +145,13 @@ VARCHAR
 VARCHAR
 
 # Test fetching the full data for address (covers multiple types)
-query IIIII
+query IIIIII
 SELECT 
     address_id, 
     address, 
     address2, 
-    city_id, 
+    city_id,
+    district,
     postal_code
 FROM odbc_scan('address', getvariable('odbc_connection'))
 WHERE address_id = 1;
@@ -159,6 +160,7 @@ WHERE address_id = 1;
 47 MySakila Drive
 NULL
 300
+ 
 NULL
 
 # Test handling of NULL values
