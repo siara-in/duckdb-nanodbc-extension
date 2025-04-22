@@ -155,7 +155,7 @@ std::vector<std::string> OdbcConnection::GetTables() {
     try {
         // Use nanodbc's catalog functions to get tables
         nanodbc::catalog catalog(connection);
-        auto tableResults = catalog.find_tables("", "TABLE", "", "");
+        auto tableResults = catalog.find_tables(std::string(), std::string("TABLE"), std::string(), std::string());
         
         while (tableResults.next()) {
             std::string tableName = tableResults.table_name();
@@ -173,23 +173,34 @@ void OdbcConnection::GetTableInfo(const std::string &tableName, ColumnList &colu
     try {
         // Get column information using nanodbc catalog
         nanodbc::catalog catalog(connection);
-        auto columnResults = catalog.find_columns("", tableName, "", "");
-        
+        auto columnResults = catalog.find_columns(std::string(), tableName, std::string(), std::string());
+
         idx_t columnIndex = 0;
         
         while (columnResults.next()) {
             std::string name = columnResults.column_name();
             SQLSMALLINT dataType = columnResults.data_type();
-            SQLULEN columnSize = columnResults.column_size();
+            SQLULEN columnSize = 0;
+            // Get column size safely - catch exceptions for VARCHAR types
+            try {
+                columnSize = columnResults.column_size();
+            } catch (const std::exception& e) {
+                // If column_size() fails, use a safe default (for VARCHAR in DuckDB)
+                columnSize = 0; // Will be handled when converting to logical type
+            }
             SQLSMALLINT decimalDigits = columnResults.decimal_digits();
             SQLSMALLINT nullable = columnResults.nullable();
             
             LogicalType columnType;
-            
             if (allVarchar) {
                 columnType = LogicalType::VARCHAR;
             } else {
-                columnType = OdbcUtils::OdbcTypeToLogicalType(dataType, columnSize, decimalDigits);
+                // For VARCHAR types in DuckDB, don't rely on column size
+                if (OdbcUtils::IsVarcharType(dataType)) {
+                    columnType = LogicalType::VARCHAR;
+                } else {
+                    columnType = OdbcUtils::OdbcTypeToLogicalType(dataType, columnSize, decimalDigits);
+                }
             }
             
             ColumnDefinition column(std::move(name), columnType);
@@ -205,30 +216,7 @@ void OdbcConnection::GetTableInfo(const std::string &tableName, ColumnList &colu
         if (columnIndex == 0) {
             throw BinderException("No columns found for table '" + tableName + "'");
         }
-        
-        // Get primary key information
-        auto pkResults = catalog.find_primary_keys(tableName, "", "");
-        std::vector<std::string> primaryKeys;
-        
-        while (pkResults.next()) {
-            std::string pkName = pkResults.column_name();
-            primaryKeys.push_back(pkName);
-        }
-        
-        if (!primaryKeys.empty()) {
-            if (primaryKeys.size() == 1) {
-                // Single-column primary key
-                for (idx_t i = 0; i < columns.LogicalColumnCount(); i++) {
-                    if (columns.GetColumn(LogicalIndex(i)).GetName() == primaryKeys[0]) {
-                        constraints.push_back(make_uniq<UniqueConstraint>(LogicalIndex(i), true));
-                        break;
-                    }
-                }
-            } else {
-                // Multi-column primary key
-                constraints.push_back(make_uniq<UniqueConstraint>(std::move(primaryKeys), true));
-            }
-        }
+
     } catch (const nanodbc::database_error& e) {
         OdbcUtils::ThrowException("get table info for '" + tableName + "'", e);
     }
@@ -242,7 +230,7 @@ std::vector<std::string> OdbcConnection::GetViews() {
         nanodbc::catalog catalog(connection);
         
         // VIEW type for standard ODBC
-        auto viewResults = catalog.find_tables("", "VIEW", "", "");
+        auto viewResults = catalog.find_tables(std::string(), std::string("VIEW"), std::string(), std::string());
         
         while (viewResults.next()) {
             std::string viewName = viewResults.table_name();
@@ -252,7 +240,7 @@ std::vector<std::string> OdbcConnection::GetViews() {
         // Some databases might use different types for views
         try {
             // Try for databases that use "SYSTEM VIEW" type
-            auto sysViewResults = catalog.find_tables("", "SYSTEM VIEW", "", "");
+            auto sysViewResults = catalog.find_tables(std::string(), std::string("SYSTEM VIEW"), std::string(), std::string());
             
             while (sysViewResults.next()) {
                 std::string viewName = sysViewResults.table_name();

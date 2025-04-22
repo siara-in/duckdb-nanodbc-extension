@@ -29,6 +29,8 @@ public:
     
     // Type name for error messages
     static std::string GetTypeName(SQLSMALLINT odbcType);
+
+    static bool IsVarcharType(SQLSMALLINT sqlType);
     
 private:
     // Lookup tables for type conversion

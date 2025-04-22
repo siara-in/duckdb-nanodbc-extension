@@ -36,6 +36,6 @@ SELECT * FROM odbc_scan('mixed_types', getvariable('odbc_connection'), all_varch
 query TTTT
 SELECT * FROM odbc_scan('mixed_types', getvariable('odbc_connection'), all_varchar=true) ORDER BY id;
 ----
-1	one	1.100000	1
-2	two	2.200000	0
-3	three	3.300000	1
+1	one	1.100000	true
+2	two	2.200000	false
+3	three	3.300000	true

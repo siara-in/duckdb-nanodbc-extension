@@ -177,4 +177,10 @@ bool OdbcUtils::ReadVarData(nanodbc::result& result, idx_t colIdx, bool& isNull,
     }
 }
 
+bool OdbcUtils::IsVarcharType(SQLSMALLINT sqlType) {
+    return sqlType == SQL_CHAR || sqlType == SQL_VARCHAR || 
+           sqlType == SQL_LONGVARCHAR || sqlType == SQL_WCHAR || 
+           sqlType == SQL_WVARCHAR || sqlType == SQL_WLONGVARCHAR;
+}
+
 } // namespace duckdb

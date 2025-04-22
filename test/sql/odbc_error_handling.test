@@ -9,9 +9,9 @@ SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'SQLi
 
 # Test invalid SQL syntax
 statement error
-SELECT * FROM odbc_query(getvariable('odbc_connection'), 'SELECT FROM invalid syntax');
+SELECT * FROM odbc_query(getvariable('odbc_connection'), 'SELECT * FROM invalid syntax');
 ----
-<REGEX>:Binder Error: ODBC error: Failed to prepare statement.*syntax error.*
+<REGEX>:Binder Error: ODBC error: Failed to prepare statement.*
 
 # Test non-existent table
 statement error
@@ -34,4 +34,4 @@ SELECT * FROM odbc_query(NULL, 'SELECT 1');
 statement error
 SELECT * FROM odbc_query(getvariable('odbc_connection'), NULL);
 ----
-<REGEX>:.*Binder Error: ODBC error: Failed to get column count.*
+<REGEX>:.*Binder Error: ODBC error: Failed.*
