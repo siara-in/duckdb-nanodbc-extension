@@ -1,0 +1,41 @@
+# name: test/sql/odbc_named_parameters.test
+# description: Test ODBC extension named parameters
+# group: [odbc]
+
+require odbc
+
+statement ok
+SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driver=SQLite Driver;Database=__TEST_DIR__/test.db' ELSE 'Driver=DuckDB Driver;Database=__TEST_DIR__/test.db' END FROM pragma_platform());
+
+# Create a test table with different types
+statement ok
+CALL odbc_exec(getvariable('odbc_connection'), sql=>'DROP TABLE IF EXISTS mixed_types;');
+
+statement ok
+CALL odbc_exec(getvariable('odbc_connection'), sql=>'CREATE TABLE mixed_types (
+  id INTEGER, 
+  name TEXT,
+  value REAL,
+  flag BOOLEAN
+);');
+
+statement ok
+CALL odbc_exec(getvariable('odbc_connection'), sql=>'INSERT INTO mixed_types VALUES 
+  (1, ''one'', 1.1, 1),
+  (2, ''two'', 2.2, 0),
+  (3, ''three'', 3.3, 1);');
+
+# Test with all_varchar parameter
+query ITRI
+SELECT * FROM odbc_scan('mixed_types', getvariable('odbc_connection'), all_varchar=false) ORDER BY id;
+----
+1	one	1.1	true
+2	two	2.2	false
+3	three	3.3	true
+
+query TTTT
+SELECT * FROM odbc_scan('mixed_types', getvariable('odbc_connection'), all_varchar=true) ORDER BY id;
+----
+1	one	1.100000	1
+2	two	2.200000	0
+3	three	3.300000	1

@@ -82,6 +82,7 @@ public:
     
     // Get tables from the connection
     std::vector<std::string> GetTables();
+    std::vector<std::string> GetViews();
     
     // Get columns for a table
     void GetTableInfo(const std::string &tableName, ColumnList &columns, 

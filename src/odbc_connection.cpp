@@ -234,4 +234,41 @@ void OdbcConnection::GetTableInfo(const std::string &tableName, ColumnList &colu
     }
 }
 
+std::vector<std::string> OdbcConnection::GetViews() {
+    std::vector<std::string> views;
+    
+    try {
+        // Use nanodbc's catalog functions to get views
+        nanodbc::catalog catalog(connection);
+        
+        // VIEW type for standard ODBC
+        auto viewResults = catalog.find_tables("", "VIEW", "", "");
+        
+        while (viewResults.next()) {
+            std::string viewName = viewResults.table_name();
+            views.push_back(viewName);
+        }
+        
+        // Some databases might use different types for views
+        try {
+            // Try for databases that use "SYSTEM VIEW" type
+            auto sysViewResults = catalog.find_tables("", "SYSTEM VIEW", "", "");
+            
+            while (sysViewResults.next()) {
+                std::string viewName = sysViewResults.table_name();
+                views.push_back(viewName);
+            }
+        } catch (...) {
+            // Ignore if this fails - just continue with the views we've found
+        }
+        
+    } catch (const nanodbc::database_error& e) {
+        // Just log the error rather than failing completely
+        // This allows partial attachment to work
+        fprintf(stderr, "Warning: Could not get views: %s\n", e.what());
+    }
+    
+    return views;
+}
+
 } // namespace duckdb

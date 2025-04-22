@@ -42,12 +42,43 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
     // Setup binding function
     result.bind = [](ClientContext &context, TableFunctionBindInput &input,
                      vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
-        return BindOdbcFunction(context, input, return_types, names, OdbcOperation::ATTACH);
+        // Validate inputs
+        if (input.inputs.size() < 1) {
+            throw BinderException("ODBC attach requires a DSN or connection string");
+        }
+        
+        if (input.inputs[0].type().id() != LogicalTypeId::VARCHAR) {
+            throw BinderException("First argument to ODBC attach must be VARCHAR (connection info)");
+        }
+        
+        auto result = make_uniq<OdbcAttachFunctionData>();
+        
+        // Parse connection info and optional credentials
+        std::string connection_info = input.inputs[0].GetValue<string>();
+        std::string username = input.inputs.size() >= 2 ? input.inputs[1].GetValue<string>() : "";
+        std::string password = input.inputs.size() >= 3 ? input.inputs[2].GetValue<string>() : "";
+        
+        result->connection_params = ConnectionParams(connection_info, username, password);
+        
+        // Process options from named parameters
+        for (auto &kv : input.named_parameters) {
+            if (kv.first == "all_varchar") {
+                result->all_varchar = BooleanValue::Get(kv.second);
+            } else if (kv.first == "overwrite") {
+                result->overwrite = BooleanValue::Get(kv.second);
+            }
+        }
+        
+        // Set up return types (single boolean column)
+        return_types.emplace_back(LogicalType::BOOLEAN);
+        names.emplace_back("Success");
+        
+        return std::move(result);
     };
     
     // Add named parameters
-    result.named_parameters["all_varchar"] = LogicalType(LogicalTypeId::BOOLEAN);
-    result.named_parameters["overwrite"] = LogicalType(LogicalTypeId::BOOLEAN);
+    result.named_parameters["all_varchar"] = LogicalType::BOOLEAN;
+    result.named_parameters["overwrite"] = LogicalType::BOOLEAN;
     
     return result;
 }
@@ -197,27 +228,46 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                     throw BinderException("No columns found for table " + result->table_name);
                 }
             } else {
-                // For QUERY, prepare statement to get schema
-                auto stmt = db->Prepare(result->sql);
-                
-                // Get column information
-                auto columnCount = stmt->GetColumnCount();
-                
-                for (idx_t i = 0; i < columnCount; i++) {
-                    auto colName = stmt->GetName(i);
-                    SQLULEN size = 0;
-                    SQLSMALLINT digits = 0;
-                    SQLSMALLINT odbcType = stmt->GetOdbcType(i, &size, &digits);
+                try {
+                    // Connect to data source
+                    auto db = OdbcConnection::Connect(result->connection_params);
                     
-                    auto duckType = result->all_varchar ? 
-                                  LogicalType::VARCHAR : 
-                                  OdbcUtils::OdbcTypeToLogicalType(odbcType, size, digits);
+                    // For QUERY, prepare statement to get schema
+                    auto stmt = db->Prepare(result->sql);
                     
-                    names.push_back(colName);
-                    return_types.push_back(duckType);
+                    // Get column information
+                    auto columnCount = stmt->GetColumnCount();
+                    
+                    // If no columns are returned (likely a DDL statement), 
+                    // add a default "Success" column
+                    if (columnCount == 0) {
+                        names.push_back("Success");
+                        return_types.push_back(LogicalType(LogicalTypeId::BOOLEAN));
+                    } else {
+                        // Original code for handling result columns
+                        for (idx_t i = 0; i < columnCount; i++) {
+                            auto colName = stmt->GetName(i);
+                            SQLULEN size = 0;
+                            SQLSMALLINT digits = 0;
+                            SQLSMALLINT odbcType = stmt->GetOdbcType(i, &size, &digits);
+                            
+                            auto duckType = result->all_varchar ? 
+                                          LogicalType::VARCHAR : 
+                                          OdbcUtils::OdbcTypeToLogicalType(odbcType, size, digits);
+                            
+                            names.push_back(colName);
+                            return_types.push_back(duckType);
+                        }
+                    }
+                    
+                    // Store column information
+                    result->column_names = names;
+                    result->column_types = return_types;
+                    
+                } catch (const nanodbc::database_error& e) {
+                    OdbcUtils::ThrowException("bind ODBC function", e);
                 }
-            }
-            
+            } 
             // Store column information
             result->column_names = names;
             result->column_types = return_types;
@@ -250,7 +300,20 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
         // Create connection
         result->connection = OdbcConnection::Connect(bind_data.connection_params);
         
-        // Prepare the query
+        // Special handling for DDL statements (indicated by a single "Success" column)
+        if (bind_data.column_names.size() == 1 && bind_data.column_names[0] == "Success") {
+            // This is a DDL statement, execute it directly without preparing
+            try {
+                // Use the connection's Execute method for DDL statements
+                result->connection->Execute(bind_data.sql);
+                result->done = false; // Will return a single success row
+            } catch (const nanodbc::database_error& e) {
+                OdbcUtils::ThrowException("execute statement", e);
+            }
+            return std::move(result);
+        }
+        
+        // Prepare the query (original code for regular queries)
         std::string sql;
         if (bind_data.sql.empty()) {
             // Build query based on column IDs
@@ -282,9 +345,35 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
 
 void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
     auto &state = data.local_state->Cast<OdbcLocalScanState>();
+    auto &bind_data = data.bind_data->Cast<OdbcScannerState>();
     if (state.done) {
         output.SetCardinality(0);
         return;
+    }
+
+    // If there's only one column and it's named "Success" (our indicator for DDL statements)
+    if (output.ColumnCount() == 1 && 
+        bind_data.column_names.size() == 1 && 
+        bind_data.column_names[0] == "Success") {
+        
+        // For DDL statements, we just execute the statement without fetching results
+        try {
+            // The statement has already been prepared and executed in InitOdbcLocalState
+            // Just mark as done and set success value
+            if (output.data[0].GetType().id() == LogicalTypeId::BOOLEAN) {
+                FlatVector::GetData<bool>(output.data[0])[0] = true;
+            }
+            
+            output.SetCardinality(1);
+            state.done = true;
+            return;
+        } catch (...) {
+            // If an error occurred during execution, it would have been thrown earlier
+            // This is just a safeguard
+            output.SetCardinality(0);
+            state.done = true;
+            return;
+        }
     }
     
     // Fetch rows and populate the DataChunk
@@ -402,63 +491,187 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
 //------------------------------------------------------------------------------
 
 void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
-    auto &state = data.bind_data->Cast<OdbcScannerState>();
+    auto &attach_data = data.bind_data->CastNoConst<OdbcAttachFunctionData>();
+    
+    // If we've already finished, just return
+    if (attach_data.finished) {
+        output.SetCardinality(0);
+        return;
+    }
     
     try {
         // Connect to the ODBC data source
-        auto db = OdbcConnection::Connect(state.connection_params);
-        
-        // Get list of tables
-        auto tables = db->GetTables();
+        auto db = OdbcConnection::Connect(attach_data.connection_params);
         
         // Create connection to DuckDB
         auto dconn = Connection(context.db->GetDatabase(context));
         
-        // Process additional parameters
-        bool overwrite = false;
-        for (auto &kv : state.named_parameters) {
-            if (kv.first == "overwrite") {
-                overwrite = BooleanValue::Get(kv.second);
-            }
-        }
-        
-        // Create views for each table
+        // Step 1: Handle tables - create views for each table
+        auto tables = db->GetTables();
         for (auto &table_name : tables) {
             // Build arguments list
             std::vector<Value> args;
             args.push_back(Value(table_name));
             
-            if (state.connection_params.GetDsn().empty()) {
+            if (attach_data.connection_params.GetDsn().empty()) {
                 // Connection string approach
-                args.push_back(Value(state.connection_params.GetConnectionString()));
+                args.push_back(Value(attach_data.connection_params.GetConnectionString()));
             } else {
                 // DSN approach
-                args.push_back(Value(state.connection_params.GetDsn()));
+                args.push_back(Value(attach_data.connection_params.GetDsn()));
                 
-                if (!state.connection_params.GetUsername().empty()) {
-                    args.push_back(Value(state.connection_params.GetUsername()));
+                if (!attach_data.connection_params.GetUsername().empty()) {
+                    args.push_back(Value(attach_data.connection_params.GetUsername()));
                     
-                    if (!state.connection_params.GetPassword().empty()) {
-                        args.push_back(Value(state.connection_params.GetPassword()));
+                    if (!attach_data.connection_params.GetPassword().empty()) {
+                        args.push_back(Value(attach_data.connection_params.GetPassword()));
                     }
                 }
             }
             
-            // Create view with vector type conversion
+            // Add all_varchar parameter if specified
             duckdb::vector<Value> duckdb_args;
             for (const auto& arg : args) {
                 duckdb_args.push_back(arg);
             }
-            auto table_func_relation = dconn.TableFunction("odbc_scan", duckdb_args);
-            table_func_relation->CreateView(table_name, overwrite, false);
+            
+            duckdb::named_parameter_map_t named_params;
+            if (attach_data.all_varchar) {
+                named_params["all_varchar"] = Value::BOOLEAN(true);
+            }
+            
+            auto table_func_relation = dconn.TableFunction("odbc_scan", duckdb_args, named_params);
+            table_func_relation->CreateView(table_name, attach_data.overwrite, false);
+        }
+        
+        // Step 2: Handle views
+        auto views = db->GetViews();
+        for (auto &view_name : views) {
+            // For views, we use odbc_query with SELECT * FROM view
+            std::vector<Value> query_args;
+            
+            if (attach_data.connection_params.GetDsn().empty()) {
+                // Connection string approach
+                query_args.push_back(Value(attach_data.connection_params.GetConnectionString()));
+            } else {
+                // DSN approach
+                query_args.push_back(Value(attach_data.connection_params.GetDsn()));
+                
+                if (!attach_data.connection_params.GetUsername().empty()) {
+                    query_args.push_back(Value(attach_data.connection_params.GetUsername()));
+                    
+                    if (!attach_data.connection_params.GetPassword().empty()) {
+                        query_args.push_back(Value(attach_data.connection_params.GetPassword()));
+                    }
+                }
+            }
+            
+            // The SQL will select from the view
+            query_args.push_back(Value("SELECT * FROM \"" + OdbcUtils::SanitizeString(view_name) + "\""));
+            
+            duckdb::vector<Value> duckdb_args;
+            for (const auto& arg : query_args) {
+                duckdb_args.push_back(arg);
+            }
+            
+            // Create a DuckDB view based on the query
+            duckdb::named_parameter_map_t named_params;
+            if (attach_data.all_varchar) {
+                named_params["all_varchar"] = Value::BOOLEAN(true);
+            }
+            
+            auto query_func_relation = dconn.TableFunction("odbc_query", duckdb_args, named_params);
+            query_func_relation->CreateView(view_name, attach_data.overwrite, false);
         }
         
         // Set output
         output.SetCardinality(1);
         output.SetValue(0, 0, Value::BOOLEAN(true));
+        
+        // Mark as finished so we don't execute again
+        attach_data.finished = true;
+        
     } catch (const nanodbc::database_error& e) {
         OdbcUtils::ThrowException("attach database", e);
     }
 }
 
+
+TableFunction OdbcTableFunction::CreateExecFunction() {
+    TableFunction result("odbc_exec", {LogicalType::VARCHAR}, ExecuteOdbcStatement);
+    
+    // Setup binding function
+    result.bind = [](ClientContext &context, TableFunctionBindInput &input,
+                     vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
+        // Validate inputs
+        if (input.inputs.size() < 1) {
+            throw BinderException("ODBC exec requires a DSN or connection string");
+        }
+        
+        if (input.inputs[0].type().id() != LogicalTypeId::VARCHAR) {
+            throw BinderException("First argument to ODBC exec must be VARCHAR (connection info)");
+        }
+        
+        auto result = make_uniq<OdbcExecFunctionData>();
+        
+        // Parse connection info and optional credentials
+        std::string connection_info = input.inputs[0].GetValue<string>();
+        std::string username = input.inputs.size() >= 2 ? input.inputs[1].GetValue<string>() : "";
+        std::string password = input.inputs.size() >= 3 ? input.inputs[2].GetValue<string>() : "";
+        
+        result->connection_params = ConnectionParams(connection_info, username, password);
+        
+        // Get SQL from named parameter 'sql' (required)
+        auto sql_param = input.named_parameters.find("sql");
+        if (sql_param == input.named_parameters.end()) {
+            throw BinderException("ODBC exec requires 'sql' parameter");
+        }
+        result->sql = sql_param->second.ToString();
+        
+        // Set up return types (single boolean column)
+        return_types.emplace_back(LogicalType::BOOLEAN);
+        names.emplace_back("Success");
+        
+        return std::move(result);
+    };
+    
+    // Add required sql parameter
+    result.named_parameters["sql"] = LogicalType(LogicalTypeId::VARCHAR);
+    
+    return result;
+}
+
+TableFunction OdbcExecFunction() {
+    return OdbcTableFunction::CreateExecFunction();
+}
+
+// Function to execute the statement
+void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+    auto &exec_data = data.bind_data->CastNoConst<OdbcExecFunctionData>();
+    
+    // If we've already finished, just return
+    if (exec_data.finished) {
+        output.SetCardinality(0);
+        return;
+    }
+    
+    try {
+        // Connect to data source
+        auto db = OdbcConnection::Connect(exec_data.connection_params);
+        
+        // Execute the SQL statement directly
+        db->Execute(exec_data.sql);
+        
+        // Set success output
+        output.SetCardinality(1);
+        auto &success_vector = output.data[0];
+        FlatVector::GetData<bool>(success_vector)[0] = true;
+        
+        // Mark as finished so we don't execute again
+        exec_data.finished = true;
+        
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("execute statement", e);
+    }
+}
 } // namespace duckdb

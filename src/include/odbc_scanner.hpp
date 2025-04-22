@@ -67,6 +67,29 @@ struct OdbcGlobalScanState : public GlobalTableFunctionState {
     }
 };
 
+struct OdbcExecFunctionData : public TableFunctionData {
+    // Connection parameters
+    ConnectionParams connection_params;
+    
+    // SQL statement to execute
+    std::string sql;
+    
+    // State tracking
+    bool finished = false;
+};
+
+struct OdbcAttachFunctionData : public TableFunctionData {
+    // Connection parameters
+    ConnectionParams connection_params;
+    
+    // Options
+    bool all_varchar = false;
+    bool overwrite = false;
+    
+    // State tracking
+    bool finished = false;
+};
+
 /**
  * @brief Creates standard ODBC table function instances
  * Factory methods for scan, attach, and query operations
@@ -76,6 +99,7 @@ public:
     static TableFunction CreateScanFunction();
     static TableFunction CreateAttachFunction();
     static TableFunction CreateQueryFunction();
+    static TableFunction CreateExecFunction();
 };
 
 // Main binding function for all ODBC operations
@@ -98,10 +122,12 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
 
 // Attach function for creating database views
 void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output);
+void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, DataChunk &output);
 
 // Function declarations for public API
 TableFunction OdbcScanFunction();
 TableFunction OdbcAttachFunction();
 TableFunction OdbcQueryFunction();
+TableFunction OdbcExecFunction();
 
 } // namespace duckdb
