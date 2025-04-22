@@ -70,15 +70,15 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
         }
         
         // Set up return types (single boolean column)
-        return_types.emplace_back(LogicalType::BOOLEAN);
+        return_types.emplace_back(LogicalTypeId::BOOLEAN);
         names.emplace_back("Success");
         
         return std::move(result);
     };
     
     // Add named parameters
-    result.named_parameters["all_varchar"] = LogicalType::BOOLEAN;
-    result.named_parameters["overwrite"] = LogicalType::BOOLEAN;
+    result.named_parameters["all_varchar"] = LogicalTypeId::BOOLEAN;
+    result.named_parameters["overwrite"] = LogicalTypeId::BOOLEAN;
     
     return result;
 }
@@ -629,7 +629,7 @@ TableFunction OdbcTableFunction::CreateExecFunction() {
         result->sql = sql_param->second.ToString();
         
         // Set up return types (single boolean column)
-        return_types.emplace_back(LogicalType::BOOLEAN);
+        return_types.emplace_back(LogicalTypeId::BOOLEAN);
         names.emplace_back("Success");
         
         return std::move(result);
