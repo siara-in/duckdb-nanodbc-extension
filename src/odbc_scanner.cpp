@@ -8,649 +8,700 @@
 #include "duckdb/storage/statistics/base_statistics.hpp"
 #include "duckdb/main/database_manager.hpp"
 #include "duckdb/main/attached_database.hpp"
-#include <cmath>
+#include "duckdb/common/string_util.hpp"
 
 namespace duckdb {
 
-LogicalType GetDuckDBType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits) {
-    return ODBCUtils::TypeToLogicalType(odbc_type, column_size, decimal_digits);
-}
+//------------------------------------------------------------------------------
+// OdbcTableFunction implementations
+//------------------------------------------------------------------------------
 
-int GetODBCSQLType(const LogicalType &type) {
-    return ODBCUtils::ToODBCType(type);
-}
-
-static unique_ptr<FunctionData> ODBCBind(ClientContext &context, TableFunctionBindInput &input,
-                                       vector<LogicalType> &return_types, vector<string> &names) {
-    auto result = make_uniq<ODBCBindData>();
+TableFunction OdbcTableFunction::CreateScanFunction() {
+    TableFunction result("odbc_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ScanOdbcSource);
     
-    // Check which connection method to use
-    if (input.inputs[0].type().id() == LogicalTypeId::VARCHAR) {
-        // First argument is table name
-        result->table_name = input.inputs[0].GetValue<string>();
-        
-        if (input.inputs.size() < 2) {
-            throw BinderException("ODBC scan requires at least a table name and either a DSN or connection string");
+    // Setup binding function
+    result.bind = [](ClientContext &context, TableFunctionBindInput &input,
+                     vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
+        return BindOdbcFunction(context, input, return_types, names, OdbcOperation::SCAN);
+    };
+    
+    // Setup state initialization
+    result.init_global = InitOdbcGlobalState;
+    result.init_local = InitOdbcLocalState;
+    result.projection_pushdown = true;
+    
+    // Add named parameters
+    result.named_parameters["all_varchar"] = LogicalType(LogicalTypeId::BOOLEAN);
+    
+    return result;
+}
+
+TableFunction OdbcTableFunction::CreateAttachFunction() {
+    TableFunction result("odbc_attach", {LogicalType::VARCHAR}, AttachOdbcDatabase);
+    
+    // Setup binding function
+    result.bind = [](ClientContext &context, TableFunctionBindInput &input,
+                     vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
+        // Validate inputs
+        if (input.inputs.size() < 1) {
+            throw BinderException("ODBC attach requires a DSN or connection string");
         }
         
-        if (input.inputs[1].type().id() == LogicalTypeId::VARCHAR) {
-            // Second argument can be either DSN or connection string
-            auto conn_str = input.inputs[1].GetValue<string>();
-            
-            // Check if it's a DSN or connection string
-            if (conn_str.find('=') == string::npos) {
-                // Likely a DSN
-                result->dsn = conn_str;
-                
-                // Check for optional username and password
-                if (input.inputs.size() >= 3) {
-                    result->username = input.inputs[2].GetValue<string>();
-                }
-                
-                if (input.inputs.size() >= 4) {
-                    result->password = input.inputs[3].GetValue<string>();
-                }
-            } else {
-                // Connection string
-                result->connection_string = conn_str;
+        if (input.inputs[0].type().id() != LogicalTypeId::VARCHAR) {
+            throw BinderException("First argument to ODBC attach must be VARCHAR (connection info)");
+        }
+        
+        auto result = make_uniq<OdbcAttachFunctionData>();
+        
+        // Parse connection info and optional credentials
+        std::string connection_info = input.inputs[0].GetValue<string>();
+        std::string username = input.inputs.size() >= 2 ? input.inputs[1].GetValue<string>() : "";
+        std::string password = input.inputs.size() >= 3 ? input.inputs[2].GetValue<string>() : "";
+        
+        result->connection_params = ConnectionParams(connection_info, username, password);
+        
+        // Process options from named parameters
+        for (auto &kv : input.named_parameters) {
+            if (kv.first == "all_varchar") {
+                result->all_varchar = BooleanValue::Get(kv.second);
+            } else if (kv.first == "overwrite") {
+                result->overwrite = BooleanValue::Get(kv.second);
             }
-        } else {
-            throw BinderException("Second argument to ODBC scan must be a VARCHAR (DSN or connection string)");
         }
-    } else {
-        throw BinderException("First argument to ODBC scan must be a VARCHAR (table name)");
+        
+        // Set up return types (single boolean column)
+        return_types.emplace_back(LogicalTypeId::BOOLEAN);
+        names.emplace_back("Success");
+        
+        return std::move(result);
+    };
+    
+    // Add named parameters
+    result.named_parameters["all_varchar"] = LogicalTypeId::BOOLEAN;
+    result.named_parameters["overwrite"] = LogicalTypeId::BOOLEAN;
+    
+    return result;
+}
+
+TableFunction OdbcTableFunction::CreateQueryFunction() {
+    TableFunction result("odbc_query", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ScanOdbcSource);
+    
+    // Setup binding function
+    result.bind = [](ClientContext &context, TableFunctionBindInput &input,
+                     vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
+        return BindOdbcFunction(context, input, return_types, names, OdbcOperation::QUERY);
+    };
+    
+    // Setup state initialization
+    result.init_global = InitOdbcGlobalState;
+    result.init_local = InitOdbcLocalState;
+    result.projection_pushdown = false;
+    
+    // Add named parameters
+    result.named_parameters["all_varchar"] = LogicalType(LogicalTypeId::BOOLEAN);
+    
+    return result;
+}
+
+TableFunction OdbcScanFunction() {
+    return OdbcTableFunction::CreateScanFunction();
+}
+
+TableFunction OdbcAttachFunction() {
+    return OdbcTableFunction::CreateAttachFunction();
+}
+
+TableFunction OdbcQueryFunction() {
+    return OdbcTableFunction::CreateQueryFunction();
+}
+
+//------------------------------------------------------------------------------
+// Binding Functions
+//------------------------------------------------------------------------------
+
+unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionBindInput &input,
+                                        vector<LogicalType> &return_types, vector<string> &names,
+                                        OdbcOperation operation) {
+    auto result = make_uniq<OdbcScannerState>();
+    
+    // Process connection information based on operation
+    switch (operation) {
+        case OdbcOperation::SCAN: {
+            // Validate inputs
+            if (input.inputs.size() < 2) {
+                throw BinderException("ODBC scan requires at least a table name and either a DSN or connection string");
+            }
+            
+            if (input.inputs[0].type().id() != LogicalTypeId::VARCHAR ||
+                input.inputs[1].type().id() != LogicalTypeId::VARCHAR) {
+                throw BinderException("First two arguments to ODBC scan must be VARCHAR (table name and connection info)");
+            }
+            
+            // Get table name and connection info
+            result->table_name = input.inputs[0].GetValue<string>();
+            
+            // Parse connection info and optional credentials
+            std::string connection_info = input.inputs[1].GetValue<string>();
+            std::string username = input.inputs.size() >= 3 ? input.inputs[2].GetValue<string>() : "";
+            std::string password = input.inputs.size() >= 4 ? input.inputs[3].GetValue<string>() : "";
+            
+            result->connection_params = ConnectionParams(connection_info, username, password);
+            break;
+        }
+        
+        case OdbcOperation::ATTACH: {
+            // Validate inputs
+            if (input.inputs.size() < 1) {
+                throw BinderException("ODBC attach requires a DSN or connection string");
+            }
+            
+            if (input.inputs[0].type().id() != LogicalTypeId::VARCHAR) {
+                throw BinderException("First argument to ODBC attach must be VARCHAR (connection info)");
+            }
+            
+            // Parse connection info and optional credentials
+            std::string connection_info = input.inputs[0].GetValue<string>();
+            std::string username = input.inputs.size() >= 2 ? input.inputs[1].GetValue<string>() : "";
+            std::string password = input.inputs.size() >= 3 ? input.inputs[2].GetValue<string>() : "";
+            
+            result->connection_params = ConnectionParams(connection_info, username, password);
+            
+            // Return types for ATTACH
+            return_types.emplace_back(LogicalType(LogicalTypeId::BOOLEAN));
+            names.emplace_back("Success");
+            break;
+        }
+        
+        case OdbcOperation::QUERY: {
+            // Validate inputs
+            if (input.inputs.size() < 2) {
+                throw BinderException("ODBC query requires a connection string and SQL query");
+            }
+            
+            if (input.inputs[0].type().id() != LogicalTypeId::VARCHAR ||
+                input.inputs[1].type().id() != LogicalTypeId::VARCHAR) {
+                throw BinderException("First two arguments to ODBC query must be VARCHAR (connection info and SQL query)");
+            }
+            
+            // Get connection info and SQL
+            std::string connection_info = input.inputs[0].GetValue<string>();
+            result->sql = input.inputs[1].GetValue<string>();
+            
+            // Parse credentials if provided
+            std::string username = input.inputs.size() >= 3 ? input.inputs[2].GetValue<string>() : "";
+            std::string password = input.inputs.size() >= 4 ? input.inputs[3].GetValue<string>() : "";
+            
+            result->connection_params = ConnectionParams(connection_info, username, password);
+            break;
+        }
     }
     
-    // Process additional parameters
+    // Process options from named parameters
     for (auto &kv : input.named_parameters) {
         if (kv.first == "all_varchar") {
             result->all_varchar = BooleanValue::Get(kv.second);
         }
+        
+        // Store all parameters for later use
+        result->named_parameters[kv.first] = kv.second;
     }
     
-    // Connect to data source and get table schema
-    ODBCDB db;
-    if (!result->dsn.empty()) {
-        db = ODBCDB::OpenWithDSN(result->dsn, result->username, result->password);
-    } else if (!result->connection_string.empty()) {
-        db = ODBCDB::OpenWithConnectionString(result->connection_string);
-    } else {
-        throw BinderException("Either DSN or connection string must be provided for ODBC scan");
+    // For SCAN and QUERY, we need to fetch schema information
+    if (operation == OdbcOperation::SCAN || operation == OdbcOperation::QUERY) {
+        try {
+            // Connect to data source
+            auto db = OdbcConnection::Connect(result->connection_params);
+            
+            if (operation == OdbcOperation::SCAN) {
+                // Get table information from database
+                ColumnList columns;
+                std::vector<std::unique_ptr<Constraint>> constraints;
+                db->GetTableInfo(result->table_name, columns, constraints, result->all_varchar);
+                
+                // Map column types and names
+                for (auto &column : columns.Logical()) {
+                    names.push_back(column.GetName());
+                    return_types.push_back(column.GetType());
+                }
+                
+                if (names.empty()) {
+                    throw BinderException("No columns found for table " + result->table_name);
+                }
+            } else {
+                try {
+                    // Connect to data source
+                    auto db = OdbcConnection::Connect(result->connection_params);
+                    
+                    // For QUERY, prepare statement to get schema
+                    auto stmt = db->Prepare(result->sql);
+                    
+                    // Get column information
+                    auto columnCount = stmt->GetColumnCount();
+                    
+                    // If no columns are returned (likely a DDL statement), 
+                    // add a default "Success" column
+                    if (columnCount == 0) {
+                        names.push_back("Success");
+                        return_types.push_back(LogicalType(LogicalTypeId::BOOLEAN));
+                    } else {
+                        // Original code for handling result columns
+                        for (idx_t i = 0; i < columnCount; i++) {
+                            auto colName = stmt->GetName(i);
+                            SQLULEN size = 0;
+                            SQLSMALLINT digits = 0;
+                            SQLSMALLINT odbcType = stmt->GetOdbcType(i, &size, &digits);
+
+                            auto duckType = result->all_varchar ? 
+                                          LogicalType::VARCHAR : 
+                                          OdbcUtils::OdbcTypeToLogicalType(odbcType, size, digits);
+                            
+                            names.push_back(colName);
+                            return_types.push_back(duckType);
+                        }
+                    }
+                    
+                    // Store column information
+                    result->column_names = names;
+                    result->column_types = return_types;
+                    
+                } catch (const nanodbc::database_error& e) {
+                    OdbcUtils::ThrowException("bind ODBC function", e);
+                }
+            } 
+            // Store column information
+            result->column_names = names;
+            result->column_types = return_types;
+            
+        } catch (const nanodbc::database_error& e) {
+            OdbcUtils::ThrowException("bind ODBC function", e);
+        }
     }
-    
-    // Get table information
-    ColumnList columns;
-    std::vector<std::unique_ptr<Constraint>> constraints;
-    db.GetTableInfo(result->table_name, columns, constraints, result->all_varchar);
-    
-    // Map column types and names
-    for (auto &column : columns.Logical()) {
-        names.push_back(column.GetName());
-        return_types.push_back(column.GetType());
-    }
-    
-    if (names.empty()) {
-        throw BinderException("No columns found for table " + result->table_name);
-    }
-    
-    result->names = names;
-    result->types = return_types;
     
     return std::move(result);
 }
 
-static unique_ptr<LocalTableFunctionState>
-ODBCInitLocalState(ExecutionContext &context, TableFunctionInitInput &input, GlobalTableFunctionState *global_state) {
-    auto &bind_data = input.bind_data->Cast<ODBCBindData>();
-    auto &gstate = global_state->Cast<ODBCGlobalState>();
-    auto result = make_uniq<ODBCLocalState>();
+//------------------------------------------------------------------------------
+// State Initialization
+//------------------------------------------------------------------------------
+
+unique_ptr<GlobalTableFunctionState> InitOdbcGlobalState(ClientContext &context, TableFunctionInitInput &input) {
+    return make_uniq<OdbcGlobalScanState>(1); // Single-threaded scan for now
+}
+
+unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context, TableFunctionInitInput &input, 
+                                                     GlobalTableFunctionState *global_state) {
+    auto &bind_data = input.bind_data->Cast<OdbcScannerState>();
+    auto result = make_uniq<OdbcLocalScanState>();
     
+    // Store column IDs from input
     result->column_ids = input.column_ids;
     
-    // If we have a global database connection, use it
-    result->db = bind_data.global_db;
-    
-    if (!result->db) {
-        // Otherwise create a new connection
-        if (!bind_data.dsn.empty()) {
-            result->owned_db = ODBCDB::OpenWithDSN(bind_data.dsn, bind_data.username, bind_data.password);
-        } else if (!bind_data.connection_string.empty()) {
-            result->owned_db = ODBCDB::OpenWithConnectionString(bind_data.connection_string);
-        } else {
-            throw std::runtime_error("No connection information available");
+    try {
+        // Create connection
+        result->connection = OdbcConnection::Connect(bind_data.connection_params);
+        
+        // Special handling for DDL statements (indicated by a single "Success" column)
+        if (bind_data.column_names.size() == 1 && bind_data.column_names[0] == "Success") {
+            // This is a DDL statement, execute it directly without preparing
+            try {
+                // Use the connection's Execute method for DDL statements
+                result->connection->Execute(bind_data.sql);
+                result->done = false; // Will return a single success row
+            } catch (const nanodbc::database_error& e) {
+                OdbcUtils::ThrowException("execute statement", e);
+            }
+            return std::move(result);
         }
-        result->db = &result->owned_db;
+        
+        // Prepare the query (original code for regular queries)
+        std::string sql;
+        if (bind_data.sql.empty()) {
+            // Build query based on column IDs
+            auto colNames = StringUtil::Join(
+                result->column_ids.data(), result->column_ids.size(), ", ", [&](const idx_t columnId) {
+                    return columnId == (column_t)-1 ? "NULL"
+                                                  : '"' + OdbcUtils::SanitizeString(bind_data.column_names[columnId]) + '"';
+                });
+                
+            sql = StringUtil::Format("SELECT %s FROM \"%s\"", colNames, 
+                                   OdbcUtils::SanitizeString(bind_data.table_name));
+        } else {
+            sql = bind_data.sql;
+        }
+        
+        // Prepare the statement
+        result->statement = result->connection->Prepare(sql);
+        result->done = false;
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("initialize scanner", e);
     }
-    
-    // Prepare the query
-    string sql;
-    if (bind_data.sql.empty()) {
-        // Build query based on column IDs
-        auto col_names = StringUtil::Join(
-            result->column_ids.data(), result->column_ids.size(), ", ", [&](const idx_t column_id) {
-                return column_id == (column_t)-1 ? "NULL"
-                                                : '"' + ODBCUtils::SanitizeString(bind_data.names[column_id]) + '"';
-            });
-            
-        sql = StringUtil::Format("SELECT %s FROM \"%s\"", col_names, 
-                                ODBCUtils::SanitizeString(bind_data.table_name));
-    } else {
-        sql = bind_data.sql;
-    }
-    
-    result->stmt = result->db->Prepare(sql.c_str());
-    result->done = false;
     
     return std::move(result);
 }
 
-static unique_ptr<GlobalTableFunctionState> ODBCInitGlobalState(ClientContext &context,
-                                                                TableFunctionInitInput &input) {
-    return make_uniq<ODBCGlobalState>(1); // Single-threaded scan for now
-}
+//------------------------------------------------------------------------------
+// Scan Function
+//------------------------------------------------------------------------------
 
-static void ODBCScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
-    auto &state = data.local_state->Cast<ODBCLocalState>();
+void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+    auto &state = data.local_state->Cast<OdbcLocalScanState>();
+    auto &bind_data = data.bind_data->Cast<OdbcScannerState>();
     if (state.done) {
+        output.SetCardinality(0);
         return;
     }
-    
-    // Initialize binding buffers for columns - if needed
-    // This would be for more complex types that need special handling
+
+    // If there's only one column and it's named "Success" (our indicator for DDL statements)
+    if (output.ColumnCount() == 1 && 
+        bind_data.column_names.size() == 1 && 
+        bind_data.column_names[0] == "Success") {
+        
+        // For DDL statements, we just execute the statement without fetching results
+        try {
+            // The statement has already been prepared and executed in InitOdbcLocalState
+            // Just mark as done and set success value
+            if (output.data[0].GetType().id() == LogicalTypeId::BOOLEAN) {
+                FlatVector::GetData<bool>(output.data[0])[0] = true;
+            }
+            
+            output.SetCardinality(1);
+            state.done = true;
+            return;
+        } catch (...) {
+            // If an error occurred during execution, it would have been thrown earlier
+            // This is just a safeguard
+            output.SetCardinality(0);
+            state.done = true;
+            return;
+        }
+    }
     
     // Fetch rows and populate the DataChunk
     idx_t out_idx = 0;
-    while (true) {
-        if (out_idx == STANDARD_VECTOR_SIZE) {
-            output.SetCardinality(out_idx);
-            return;
-        }
-        
-        auto &stmt = state.stmt;
-        bool has_more;
-        
-        // For the first row, we need to call Step which executes the statement
-        if (out_idx == 0) {
-            has_more = stmt.Step();
-        } else {
-            // For subsequent rows, we call SQLFetch
-            SQLRETURN ret = SQLFetch(stmt.hstmt);
-            has_more = (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO);
-        }
-        
-        if (!has_more) {
+    while (out_idx < STANDARD_VECTOR_SIZE) {
+        if (!state.statement->Step()) {
+            // No more rows to fetch
             state.done = true;
-            output.SetCardinality(out_idx);
             break;
         }
-        
         state.scan_count++;
         
         // Process each column
         for (idx_t col_idx = 0; col_idx < output.ColumnCount(); col_idx++) {
             auto &out_vec = output.data[col_idx];
-
-            SQLULEN column_size = 0;
-            SQLSMALLINT decimal_digits = 0;
-            SQLSMALLINT odbc_type = stmt.GetODBCType(col_idx, &column_size, &decimal_digits);
             
-            // Get the NULL indicator
-            SQLLEN indicator;
-            SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_DEFAULT, NULL, 0, &indicator);
-            
-            if (indicator == SQL_NULL_DATA) {
-                auto &mask = FlatVector::Validity(out_vec);
-                mask.Set(out_idx, false);
+            // Check for NULL
+            if (state.statement->IsNull(col_idx)) {
+                FlatVector::Validity(out_vec).Set(out_idx, false);
                 continue;
             }
             
             // Based on the output vector type, convert and fetch the data
             switch (out_vec.GetType().id()) {
                 case LogicalTypeId::BOOLEAN: {
-                    char value;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_BIT, &value, sizeof(value), &indicator);
-                    FlatVector::GetData<bool>(out_vec)[out_idx] = value != 0;
+                    FlatVector::GetData<bool>(out_vec)[out_idx] = (state.statement->GetInt32(col_idx) != 0);
                     break;
                 }
                 case LogicalTypeId::TINYINT: {
-                    int8_t value;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_STINYINT, &value, sizeof(value), &indicator);
-                    FlatVector::GetData<int8_t>(out_vec)[out_idx] = value;
+                    FlatVector::GetData<int8_t>(out_vec)[out_idx] = static_cast<int8_t>(state.statement->GetInt32(col_idx));
                     break;
                 }
                 case LogicalTypeId::SMALLINT: {
-                    int16_t value;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SSHORT, &value, sizeof(value), &indicator);
-                    FlatVector::GetData<int16_t>(out_vec)[out_idx] = value;
+                    FlatVector::GetData<int16_t>(out_vec)[out_idx] = static_cast<int16_t>(state.statement->GetInt32(col_idx));
                     break;
                 }
                 case LogicalTypeId::INTEGER: {
-                    int32_t value;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SLONG, &value, sizeof(value), &indicator);
-                    FlatVector::GetData<int32_t>(out_vec)[out_idx] = value;
+                    FlatVector::GetData<int32_t>(out_vec)[out_idx] = state.statement->GetInt32(col_idx);
                     break;
                 }
                 case LogicalTypeId::BIGINT: {
-                    int64_t value;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_SBIGINT, &value, sizeof(value), &indicator);
-                    FlatVector::GetData<int64_t>(out_vec)[out_idx] = value;
+                    FlatVector::GetData<int64_t>(out_vec)[out_idx] = state.statement->GetInt64(col_idx);
                     break;
                 }
                 case LogicalTypeId::FLOAT: {
-                    float value;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_FLOAT, &value, sizeof(value), &indicator);
-                    FlatVector::GetData<float>(out_vec)[out_idx] = value;
+                    FlatVector::GetData<float>(out_vec)[out_idx] = static_cast<float>(state.statement->GetDouble(col_idx));
                     break;
                 }
                 case LogicalTypeId::DOUBLE: {
-                    double value;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_DOUBLE, &value, sizeof(value), &indicator);
-                    FlatVector::GetData<double>(out_vec)[out_idx] = value;
+                    FlatVector::GetData<double>(out_vec)[out_idx] = state.statement->GetDouble(col_idx);
                     break;
                 }
                 case LogicalTypeId::DECIMAL: {
                     auto &decimal_type = out_vec.GetType();
-                    // Get width and scale from both sources
-                    uint8_t bind_width = DecimalType::GetWidth(decimal_type);
-                    uint8_t bind_scale = DecimalType::GetScale(decimal_type);
+                    uint8_t width = DecimalType::GetWidth(decimal_type);
+                    uint8_t scale = DecimalType::GetScale(decimal_type);
                     
-                    // Use scan-time information as backup if binding didn't capture it correctly
-                    uint8_t width = (bind_width > 0) ? bind_width : column_size;
-                    uint8_t scale = (bind_scale > 0) ? bind_scale : decimal_digits;
+                    // Get the value as double first
+                    double decimal_val = state.statement->GetDouble(col_idx);
                     
-                    // Still apply defaults if necessary
-                    if (width == 0) width = 38;  // Default width
-                    if (scale == 0) scale = 2;   // Default scale
-
-                    // Always use string representation for decimals to preserve exact values
-                    std::vector<char> decimalData;
-                    bool isNull = false;
+                    // Scale the value based on decimal scale (multiply by 10^scale)
+                    double scaled_val = decimal_val * pow(10, scale);
                     
-                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, SQL_C_CHAR, isNull, decimalData)) {
-                        FlatVector::Validity(out_vec).Set(out_idx, false);
-                        break;
-                    }
-                    
-                    if (isNull) {
-                        FlatVector::Validity(out_vec).Set(out_idx, false);
-                        break;
-                    }
-                    
-                    // Ensure null-termination for string processing
-                    if (!decimalData.empty() && decimalData.back() != '\0') {
-                        decimalData.push_back('\0');
-                    }
-                    
-                    // Process based on target storage type
-                    bool success = false;
                     switch (decimal_type.InternalType()) {
-                        case PhysicalType::INT16: {
-                            int16_t result;
-                            success = TryDecimalStringCast<int16_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
-                            if (success) {
-                                FlatVector::GetData<int16_t>(out_vec)[out_idx] = result;
-                            }
+                        case PhysicalType::INT16:
+                            FlatVector::GetData<int16_t>(out_vec)[out_idx] = (int16_t)round(scaled_val);
                             break;
-                        }
-                        case PhysicalType::INT32: {
-                            int32_t result;
-                            success = TryDecimalStringCast<int32_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
-                            if (success) {
-                                FlatVector::GetData<int32_t>(out_vec)[out_idx] = result;
-                            }
+                        case PhysicalType::INT32:
+                            FlatVector::GetData<int32_t>(out_vec)[out_idx] = (int32_t)round(scaled_val);
                             break;
-                        }
-                        case PhysicalType::INT64: {
-                            int64_t result;
-                            success = TryDecimalStringCast<int64_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
-                            if (success) {
-                                FlatVector::GetData<int64_t>(out_vec)[out_idx] = result;
-                            }
+                        case PhysicalType::INT64:
+                            FlatVector::GetData<int64_t>(out_vec)[out_idx] = (int64_t)round(scaled_val);
                             break;
-                        }
-                        case PhysicalType::INT128: {
-                            hugeint_t result;
-                            success = TryDecimalStringCast<hugeint_t>(decimalData.data(), decimalData.size() - 1, result, width, scale);
-                            if (success) {
-                                FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = result;
-                            }
+                        case PhysicalType::INT128:
+                            FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = (hugeint_t)round(scaled_val);
                             break;
-                        }
                         default:
-                            throw InternalException("Unsupported decimal storage type");
-                    }
-                    
-                    if (!success) {
-                        FlatVector::Validity(out_vec).Set(out_idx, false);
+                            FlatVector::Validity(out_vec).Set(out_idx, false);
+                            break;
                     }
                     break;
                 }
                 case LogicalTypeId::VARCHAR: {
-                    std::vector<char> strData;
-                    bool isNull = false;
-                    
-                    SQLSMALLINT ctype = ODBCUtils::IsWideType(odbc_type) ? SQL_C_WCHAR : SQL_C_CHAR;
-                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, ctype, isNull, strData)) {
-                        auto &mask = FlatVector::Validity(out_vec);
-                        mask.Set(out_idx, false);
-                        break;
-                    }
-                    
-                    if (isNull) {
-                        auto &mask = FlatVector::Validity(out_vec);
-                        mask.Set(out_idx, false);
-                    } else if (strData.empty()) {
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddString(out_vec, "");
-                    } else {
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddString(out_vec, strData.data(), strData.size());
-                    }
+                    std::string str_val = state.statement->GetString(col_idx);
+                    FlatVector::GetData<string_t>(out_vec)[out_idx] = 
+                        StringVector::AddString(out_vec, str_val);
                     break;
                 }
                 case LogicalTypeId::DATE: {
-                    SQL_DATE_STRUCT date_val;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_DATE, &date_val, sizeof(date_val), &indicator);
-                    FlatVector::GetData<date_t>(out_vec)[out_idx] = Date::FromDate(date_val.year, date_val.month, date_val.day);
+                    // Extract date part from timestamp
+                    timestamp_t ts = state.statement->GetTimestamp(col_idx);
+                    FlatVector::GetData<date_t>(out_vec)[out_idx] = Timestamp::GetDate(ts);
                     break;
                 }
                 case LogicalTypeId::TIME: {
-                    SQL_TIME_STRUCT time_val;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_TIME, &time_val, sizeof(time_val), &indicator);
-                    FlatVector::GetData<dtime_t>(out_vec)[out_idx] = Time::FromTime(time_val.hour, time_val.minute, time_val.second, 0);
+                    // Extract time part from timestamp
+                    timestamp_t ts = state.statement->GetTimestamp(col_idx);
+                    FlatVector::GetData<dtime_t>(out_vec)[out_idx] = Timestamp::GetTime(ts);
                     break;
                 }
                 case LogicalTypeId::TIMESTAMP: {
-                    SQL_TIMESTAMP_STRUCT ts_val;
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_TYPE_TIMESTAMP, &ts_val, sizeof(ts_val), &indicator);
-                    
-                    date_t date_val = Date::FromDate(ts_val.year, ts_val.month, ts_val.day);
-                    dtime_t time_val = Time::FromTime(ts_val.hour, ts_val.minute, ts_val.second, ts_val.fraction / 1000000);
-                    
-                    FlatVector::GetData<timestamp_t>(out_vec)[out_idx] = Timestamp::FromDatetime(date_val, time_val);
+                    FlatVector::GetData<timestamp_t>(out_vec)[out_idx] = state.statement->GetTimestamp(col_idx);
                     break;
                 }
                 case LogicalTypeId::UUID: {
-                    // UUIDs in ODBC are typically returned as strings in standard format
-                    char buffer[37]; // 36 chars for UUID string + null terminator
-                    SQLLEN bytes_read;
+                    // UUIDs are typically handled as strings in ODBC
+                    std::string uuidStr = state.statement->GetString(col_idx);
                     
-                    // Fetch the UUID as a string
-                    SQLGetData(stmt.hstmt, col_idx + 1, SQL_C_CHAR, buffer, sizeof(buffer), &bytes_read);
-                    
-                    if (bytes_read > 0 && bytes_read < sizeof(buffer)) {
-                        // Convert string UUID to DuckDB UUID format
-                        try {
-                            // Ensure null termination
-                            buffer[bytes_read] = '\0';
-                            
-                            // Parse the UUID string
-                            hugeint_t uuid_value;
-                            if (UUID::FromString(string(buffer), uuid_value)) {
-                                FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = uuid_value;
-                            } else {
-                                // If parsing fails, set to NULL
-                                auto &mask = FlatVector::Validity(out_vec);
-                                mask.Set(out_idx, false);
-                            }
-                        } catch (...) {
-                            // If any error occurs during conversion, set to NULL
-                            auto &mask = FlatVector::Validity(out_vec);
-                            mask.Set(out_idx, false);
+                    // Convert string UUID to DuckDB UUID format
+                    try {
+                        hugeint_t uuidValue;
+                        if (UUID::FromString(uuidStr, uuidValue)) {
+                            FlatVector::GetData<hugeint_t>(out_vec)[out_idx] = uuidValue;
+                        } else {
+                            // If parsing fails, set to NULL
+                            FlatVector::Validity(out_vec).Set(out_idx, false);
                         }
-                    } else if (bytes_read >= sizeof(buffer)) {
-                        // UUID string is too long (should never happen for valid UUIDs)
-                        auto &mask = FlatVector::Validity(out_vec);
-                        mask.Set(out_idx, false);
+                    } catch (...) {
+                        // If any error occurs during conversion, set to NULL
+                        FlatVector::Validity(out_vec).Set(out_idx, false);
                     }
                     break;
                 }
                 case LogicalTypeId::BLOB: {
-                    std::vector<char> blobData;
-                    bool isNull = false;
-                    
-                    if (!ODBCUtils::ReadVarColumn(stmt.hstmt, col_idx + 1, SQL_C_BINARY, isNull, blobData)) {
-                        auto &mask = FlatVector::Validity(out_vec);
-                        mask.Set(out_idx, false);
-                        break;
-                    }
-                    
-                    if (isNull) {
-                        auto &mask = FlatVector::Validity(out_vec);
-                        mask.Set(out_idx, false);
-                    } else if (blobData.empty()) {
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddStringOrBlob(out_vec, "", 0);
-                    } else {
-                        FlatVector::GetData<string_t>(out_vec)[out_idx] = 
-                            StringVector::AddStringOrBlob(out_vec, blobData.data(), blobData.size());
-                    }
+                    std::string blob_data = state.statement->GetString(col_idx);
+                    FlatVector::GetData<string_t>(out_vec)[out_idx] = 
+                        StringVector::AddStringOrBlob(out_vec, blob_data.data(), blob_data.size());
                     break;
                 }
                 default:
-                    throw std::runtime_error("Unsupported ODBC to DuckDB type conversion: " + 
-                                           out_vec.GetType().ToString());
+                    throw BinderException("Unsupported ODBC to DuckDB type conversion: " + 
+                                       out_vec.GetType().ToString());
             }
         }
         
         out_idx++;
     }
-}
-
-static InsertionOrderPreservingMap<string> ODBCToString(TableFunctionToStringInput &input) {
-    D_ASSERT(input.bind_data);
-    InsertionOrderPreservingMap<string> result;
-    auto &bind_data = input.bind_data->Cast<ODBCBindData>();
-    result["Table"] = bind_data.table_name;
-    if (!bind_data.dsn.empty()) {
-        result["DSN"] = bind_data.dsn;
-    } else if (!bind_data.connection_string.empty()) {
-        // Don't show the full connection string as it might contain credentials
-        result["Connection"] = "Connection String";
-    }
-    return result;
-}
-
-static BindInfo ODBCBindInfo(const optional_ptr<FunctionData> bind_data_p) {
-    BindInfo info(ScanType::EXTERNAL);
-    auto &bind_data = bind_data_p->Cast<ODBCBindData>();
-    info.table = bind_data.table;
-    return info;
-}
-
-ODBCScanFunction::ODBCScanFunction()
-    : TableFunction("odbc_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ODBCScan, ODBCBind,
-                    ODBCInitGlobalState, ODBCInitLocalState) {
-    to_string = ODBCToString;
-    get_bind_info = ODBCBindInfo;
-    projection_pushdown = true;
-    named_parameters["all_varchar"] = LogicalType::BOOLEAN;
-}
-
-struct AttachFunctionData : public TableFunctionData {
-    AttachFunctionData() {}
-
-    bool finished = false;
-    bool overwrite = false;
-    string dsn;
-    string connection_string;
-    string username;
-    string password;
-};
-
-static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunctionBindInput &input,
-                                           vector<LogicalType> &return_types, vector<string> &names) {
-    auto result = make_uniq<AttachFunctionData>();
     
-    // Check which connection method to use
-    if (input.inputs[0].type().id() == LogicalTypeId::VARCHAR) {
-        auto conn_str = input.inputs[0].GetValue<string>();
-        
-        // Check if it's a DSN or connection string
-        if (conn_str.find('=') == string::npos) {
-            // Likely a DSN
-            result->dsn = conn_str;
-            
-            // Check for optional username and password
-            if (input.inputs.size() >= 2) {
-                result->username = input.inputs[1].GetValue<string>();
-            }
-            
-            if (input.inputs.size() >= 3) {
-                result->password = input.inputs[2].GetValue<string>();
-            }
-        } else {
-            // Connection string
-            result->connection_string = conn_str;
-        }
-    } else {
-        throw BinderException("First argument to ODBC attach must be a VARCHAR (DSN or connection string)");
-    }
-    
-    // Process additional parameters
-    for (auto &kv : input.named_parameters) {
-        if (kv.first == "overwrite") {
-            result->overwrite = BooleanValue::Get(kv.second);
-        }
-    }
-    
-    return_types.emplace_back(LogicalType::BOOLEAN);
-    names.emplace_back("Success");
-    return std::move(result);
+    // Set the cardinality of the output chunk
+    output.SetCardinality(out_idx);
 }
 
-static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-    auto &data = data_p.bind_data->CastNoConst<AttachFunctionData>();
-    if (data.finished) {
+//------------------------------------------------------------------------------
+// Attach Function
+//------------------------------------------------------------------------------
+
+void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+    auto &attach_data = data.bind_data->CastNoConst<OdbcAttachFunctionData>();
+    
+    // If we've already finished, just return
+    if (attach_data.finished) {
+        output.SetCardinality(0);
         return;
     }
     
-    // Connect to the ODBC data source
-    ODBCDB db;
-    if (!data.dsn.empty()) {
-        db = ODBCDB::OpenWithDSN(data.dsn, data.username, data.password);
-    } else if (!data.connection_string.empty()) {
-        db = ODBCDB::OpenWithConnectionString(data.connection_string);
-    } else {
-        throw std::runtime_error("No connection information provided");
-    }
-    
-    // Get list of tables
-    auto tables = db.GetTables();
-    
-    // Create connection to DuckDB
-    auto dconn = Connection(context.db->GetDatabase(context));
-    
-    // Create views for each table
-    for (auto &table_name : tables) {
-        if (!data.dsn.empty()) {
-            dconn.TableFunction("odbc_scan", {Value(table_name), Value(data.dsn), 
-                                Value(data.username), Value(data.password)})
-                ->CreateView(table_name, data.overwrite, false);
-        } else {
-            dconn.TableFunction("odbc_scan", {Value(table_name), Value(data.connection_string)})
-                ->CreateView(table_name, data.overwrite, false);
-        }
-    }
-    
-    data.finished = true;
-    
-    // Set output
-    output.SetCardinality(1);
-    output.SetValue(0, 0, Value::BOOLEAN(true));
-}
-
-ODBCAttachFunction::ODBCAttachFunction()
-    : TableFunction("odbc_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind) {
-    named_parameters["overwrite"] = LogicalType::BOOLEAN;
-}
-
-static unique_ptr<FunctionData> QueryBind(ClientContext &context, TableFunctionBindInput &input,
-                                       vector<LogicalType> &return_types, vector<string> &names) {
-    auto result = make_uniq<ODBCBindData>();
-    
-    if (input.inputs[0].IsNull() || input.inputs[1].IsNull()) {
-        throw BinderException("Parameters to odbc_query cannot be NULL");
-    }
-    
-    // First parameter is either DSN or connection string
-    auto conn_str = input.inputs[0].GetValue<string>();
-    
-    // Check if it's a DSN or connection string
-    if (conn_str.find('=') == string::npos) {
-        // Likely a DSN
-        result->dsn = conn_str;
+    try {
+        // Connect to the ODBC data source
+        auto db = OdbcConnection::Connect(attach_data.connection_params);
         
-        // Check for optional username and password
-        if (input.inputs.size() >= 3) {
-            result->username = input.inputs[2].GetValue<string>();
+        // Create connection to DuckDB
+        auto dconn = Connection(context.db->GetDatabase(context));
+        
+        // Step 1: Handle tables - create views for each table
+        auto tables = db->GetTables();
+        for (auto &table_name : tables) {
+            // Build arguments list
+            std::vector<Value> args;
+            args.push_back(Value(table_name));
+            
+            if (attach_data.connection_params.GetDsn().empty()) {
+                // Connection string approach
+                args.push_back(Value(attach_data.connection_params.GetConnectionString()));
+            } else {
+                // DSN approach
+                args.push_back(Value(attach_data.connection_params.GetDsn()));
+                
+                if (!attach_data.connection_params.GetUsername().empty()) {
+                    args.push_back(Value(attach_data.connection_params.GetUsername()));
+                    
+                    if (!attach_data.connection_params.GetPassword().empty()) {
+                        args.push_back(Value(attach_data.connection_params.GetPassword()));
+                    }
+                }
+            }
+            
+            // Add all_varchar parameter if specified
+            duckdb::vector<Value> duckdb_args;
+            for (const auto& arg : args) {
+                duckdb_args.push_back(arg);
+            }
+            
+            duckdb::named_parameter_map_t named_params;
+            if (attach_data.all_varchar) {
+                named_params["all_varchar"] = Value::BOOLEAN(true);
+            }
+            
+            auto table_func_relation = dconn.TableFunction("odbc_scan", duckdb_args, named_params);
+            table_func_relation->CreateView(table_name, attach_data.overwrite, false);
         }
         
-        if (input.inputs.size() >= 4) {
-            result->password = input.inputs[3].GetValue<string>();
+        // Step 2: Handle views
+        auto views = db->GetViews();
+        for (auto &view_name : views) {
+            // For views, we use odbc_query with SELECT * FROM view
+            std::vector<Value> query_args;
+            
+            if (attach_data.connection_params.GetDsn().empty()) {
+                // Connection string approach
+                query_args.push_back(Value(attach_data.connection_params.GetConnectionString()));
+            } else {
+                // DSN approach
+                query_args.push_back(Value(attach_data.connection_params.GetDsn()));
+                
+                if (!attach_data.connection_params.GetUsername().empty()) {
+                    query_args.push_back(Value(attach_data.connection_params.GetUsername()));
+                    
+                    if (!attach_data.connection_params.GetPassword().empty()) {
+                        query_args.push_back(Value(attach_data.connection_params.GetPassword()));
+                    }
+                }
+            }
+            
+            // The SQL will select from the view
+            query_args.push_back(Value("SELECT * FROM \"" + OdbcUtils::SanitizeString(view_name) + "\""));
+            
+            duckdb::vector<Value> duckdb_args;
+            for (const auto& arg : query_args) {
+                duckdb_args.push_back(arg);
+            }
+            
+            // Create a DuckDB view based on the query
+            duckdb::named_parameter_map_t named_params;
+            if (attach_data.all_varchar) {
+                named_params["all_varchar"] = Value::BOOLEAN(true);
+            }
+            
+            auto query_func_relation = dconn.TableFunction("odbc_query", duckdb_args, named_params);
+            query_func_relation->CreateView(view_name, attach_data.overwrite, false);
         }
-    } else {
-        // Connection string
-        result->connection_string = conn_str;
-    }
-    
-    // Second parameter is the SQL query
-    result->sql = input.inputs[1].GetValue<string>();
-    
-    // Process additional parameters
-    for (auto &kv : input.named_parameters) {
-        if (kv.first == "all_varchar") {
-            result->all_varchar = BooleanValue::Get(kv.second);
-        }
-    }
-    
-    // Connect to ODBC data source
-    ODBCDB db;
-    if (!result->dsn.empty()) {
-        db = ODBCDB::OpenWithDSN(result->dsn, result->username, result->password);
-    } else if (!result->connection_string.empty()) {
-        db = ODBCDB::OpenWithConnectionString(result->connection_string);
-    } else {
-        throw BinderException("No connection information provided");
-    }
-    
-    // Prepare statement to get column info
-    auto stmt = db.Prepare(result->sql);
-    if (!stmt.IsOpen()) {
-        throw BinderException("Failed to prepare query");
-    }
-    
-    // Get column information
-    auto column_count = stmt.GetColumnCount();
-    for (idx_t i = 0; i < column_count; i++) {
-        auto column_name = stmt.GetName(i);
-        // Get full type information
-        SQLULEN column_size = 0;
-        SQLSMALLINT decimal_digits = 0;
-        SQLSMALLINT odbc_type = stmt.GetODBCType(i, &column_size, &decimal_digits);
         
-        auto column_type = result->all_varchar ? LogicalType::VARCHAR : 
-                        GetDuckDBType(odbc_type, column_size, decimal_digits);
+        // Set output
+        output.SetCardinality(1);
+        output.SetValue(0, 0, Value::BOOLEAN(true));
         
-        names.push_back(column_name);
-        return_types.push_back(column_type);
+        // Mark as finished so we don't execute again
+        attach_data.finished = true;
+        
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("attach database", e);
     }
-    
-    if (names.empty()) {
-        throw BinderException("Query must return at least one column");
-    }
-    
-    result->names = names;
-    result->types = return_types;
-    
-    return std::move(result);
 }
 
-ODBCQueryFunction::ODBCQueryFunction()
-    : TableFunction("odbc_query", {LogicalType::VARCHAR, LogicalType::VARCHAR}, ODBCScan, QueryBind,
-                    ODBCInitGlobalState, ODBCInitLocalState) {
-    projection_pushdown = false;  // Can't push projection to arbitrary queries
-    named_parameters["all_varchar"] = LogicalType::BOOLEAN;
+
+TableFunction OdbcTableFunction::CreateExecFunction() {
+    TableFunction result("odbc_exec", {LogicalType::VARCHAR}, ExecuteOdbcStatement);
+    
+    // Setup binding function
+    result.bind = [](ClientContext &context, TableFunctionBindInput &input,
+                     vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
+        // Validate inputs
+        if (input.inputs.size() < 1) {
+            throw BinderException("ODBC exec requires a DSN or connection string");
+        }
+        
+        if (input.inputs[0].type().id() != LogicalTypeId::VARCHAR) {
+            throw BinderException("First argument to ODBC exec must be VARCHAR (connection info)");
+        }
+        
+        auto result = make_uniq<OdbcExecFunctionData>();
+        
+        // Parse connection info and optional credentials
+        std::string connection_info = input.inputs[0].GetValue<string>();
+        std::string username = input.inputs.size() >= 2 ? input.inputs[1].GetValue<string>() : "";
+        std::string password = input.inputs.size() >= 3 ? input.inputs[2].GetValue<string>() : "";
+        
+        result->connection_params = ConnectionParams(connection_info, username, password);
+        
+        // Get SQL from named parameter 'sql' (required)
+        auto sql_param = input.named_parameters.find("sql");
+        if (sql_param == input.named_parameters.end()) {
+            throw BinderException("ODBC exec requires 'sql' parameter");
+        }
+        result->sql = sql_param->second.ToString();
+        
+        // Set up return types (single boolean column)
+        return_types.emplace_back(LogicalTypeId::BOOLEAN);
+        names.emplace_back("Success");
+        
+        return std::move(result);
+    };
+    
+    // Add required sql parameter
+    result.named_parameters["sql"] = LogicalType(LogicalTypeId::VARCHAR);
+    
+    return result;
 }
 
+TableFunction OdbcExecFunction() {
+    return OdbcTableFunction::CreateExecFunction();
+}
+
+// Function to execute the statement
+void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+    auto &exec_data = data.bind_data->CastNoConst<OdbcExecFunctionData>();
+    
+    // If we've already finished, just return
+    if (exec_data.finished) {
+        output.SetCardinality(0);
+        return;
+    }
+    
+    try {
+        // Connect to data source
+        auto db = OdbcConnection::Connect(exec_data.connection_params);
+        
+        // Execute the SQL statement directly
+        db->Execute(exec_data.sql);
+        
+        // Set success output
+        output.SetCardinality(1);
+        auto &success_vector = output.data[0];
+        FlatVector::GetData<bool>(success_vector)[0] = true;
+        
+        // Mark as finished so we don't execute again
+        exec_data.finished = true;
+        
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("execute statement", e);
+    }
+}
 } // namespace duckdb

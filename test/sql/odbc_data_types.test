@@ -1,0 +1,170 @@
+# name: test/sql/odbc_data_types.test
+# description: Test ODBC extension's table scanning functionality with various data types
+# group: [odbc]
+
+require odbc
+
+statement ok
+SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driver=SQLite Driver;Database=data/sakila.sqlite' ELSE 'Driver=DuckDB Driver;Database=data/sakila.duckdb' END FROM pragma_platform());
+
+# Test integer types with actor table
+query III
+SELECT actor_id, TYPEOF(actor_id), COUNT(*)
+FROM odbc_scan('actor', getvariable('odbc_connection'))
+GROUP BY actor_id, TYPEOF(actor_id)
+ORDER BY actor_id
+LIMIT 3;
+----
+1.0
+DOUBLE
+1
+2.0
+DOUBLE
+1
+3.0
+DOUBLE
+1
+
+
+# Test varchar type with actor names
+query TTT
+SELECT first_name, last_name, TYPEOF(first_name)
+FROM odbc_scan('actor', getvariable('odbc_connection'))
+WHERE actor_id = 1;
+----
+PENELOPE
+GUINESS
+VARCHAR
+
+# Test timestamp type with rental table
+query TT
+SELECT TYPEOF(rental_date), TYPEOF(return_date)
+FROM odbc_scan('rental', getvariable('odbc_connection'))
+LIMIT 1;
+----
+TIMESTAMP
+TIMESTAMP
+
+# Test decimal/numeric types with payment table
+query II
+SELECT SUM(amount::double), TYPEOF(amount::double)
+FROM odbc_scan('payment', getvariable('odbc_connection'))
+GROUP BY TYPEOF(amount::double)
+LIMIT 1;
+----
+67416.51
+DOUBLE
+
+# Test scanning film table which has multiple types
+query IIIII
+SELECT 
+    film_id, 
+    title, 
+    description, 
+    rental_rate, 
+    length
+FROM odbc_scan('film', getvariable('odbc_connection'))
+WHERE film_id = 1;
+----
+1
+ACADEMY DINOSAUR
+A Epic Drama of a Feminist And a Mad Scientist who must Battle a Teacher in The Canadian Rockies
+0.99
+86
+
+# Test projection push-down
+query T
+SELECT title 
+FROM odbc_scan('film', getvariable('odbc_connection')) 
+WHERE film_id = 1;
+----
+ACADEMY DINOSAUR
+
+# Test with a more complex query using joins
+query TTR
+SELECT c.name, f.title, f.rental_rate
+FROM odbc_scan('film', getvariable('odbc_connection')) f
+JOIN odbc_scan('film_category', getvariable('odbc_connection')) fc 
+    ON f.film_id = fc.film_id
+JOIN odbc_scan('category', getvariable('odbc_connection')) c 
+    ON fc.category_id = c.category_id
+WHERE f.film_id = 1;
+----
+Documentary
+ACADEMY DINOSAUR
+0.99
+
+# Test boolean type with film table
+query IT
+SELECT special_features IS NOT NULL, TYPEOF(special_features)
+FROM odbc_scan('film', getvariable('odbc_connection'))
+WHERE film_id = 1;
+----
+true
+VARCHAR
+
+# Test with filtering (processed in DuckDB, not pushed down)
+query I
+SELECT COUNT(*) 
+FROM odbc_scan('film', getvariable('odbc_connection'))
+WHERE rental_rate::decimal(10,2) > 4.0;
+----
+336
+
+# Test with aggregation
+query IR
+SELECT rating, AVG(rental_rate::decimal(20,2))
+FROM odbc_scan('film', getvariable('odbc_connection'))
+GROUP BY rating
+ORDER BY rating;
+----
+G
+2.88
+NC-17
+2.97
+PG
+3.05
+PG-13
+3.03
+R
+2.94
+
+# Test all_varchar parameter
+query TTT
+SELECT 
+    TYPEOF(film_id), 
+    TYPEOF(rental_rate), 
+    TYPEOF(last_update)
+FROM odbc_scan('film', getvariable('odbc_connection'), all_varchar=>true)
+LIMIT 1;
+----
+VARCHAR
+VARCHAR
+VARCHAR
+
+# Test fetching the full data for address (covers multiple types)
+query IIIIII
+SELECT 
+    address_id, 
+    address, 
+    address2, 
+    city_id,
+    district,
+    postal_code
+FROM odbc_scan('address', getvariable('odbc_connection'))
+WHERE address_id = 1;
+----
+1
+47 MySakila Drive
+NULL
+300
+ 
+NULL
+
+# Test handling of NULL values
+query I
+SELECT COUNT(*) 
+FROM odbc_scan('address', getvariable('odbc_connection'))
+WHERE address2 IS NULL;
+----
+603

@@ -1,41 +1,42 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "duckdb/common/string_util.hpp"
 #include "odbc_headers.hpp"
 #include <string>
+#include <unordered_map>
 
 namespace duckdb {
 
-class ODBCUtils {
+class OdbcUtils {
 public:
-    // Check ODBC error and throw exception if necessary
-    static void Check(SQLRETURN rc, SQLSMALLINT handle_type, SQLHANDLE handle, const std::string &operation);
+    // Format error message and throw a DuckDB exception
+    static void ThrowException(const std::string& operation, const nanodbc::database_error& e);
     
-    // Get error message from ODBC
-    static std::string GetErrorMessage(SQLSMALLINT handle_type, SQLHANDLE handle);
+    // Sanitize string for ODBC usage (escape quotes)
+    static std::string SanitizeString(const std::string& input);
     
-    // Convert ODBC type to string representation
-    static std::string TypeToString(SQLSMALLINT odbc_type);
+    // Get column metadata from nanodbc result
+    static void GetColumnMetadata(nanodbc::result& result, idx_t colIdx, 
+                                 SQLSMALLINT& type, SQLULEN& columnSize, SQLSMALLINT& decimalDigits);
     
-    // Sanitize string for ODBC usage
-    static std::string SanitizeString(const std::string &input);
+    // Type conversion lookups
+    static LogicalType OdbcTypeToLogicalType(SQLSMALLINT odbcType, SQLULEN columnSize, SQLSMALLINT decimalDigits);
+    static SQLSMALLINT LogicalTypeToOdbcType(const LogicalType& type);
     
-    // Convert DuckDB type to ODBC type
-    static SQLSMALLINT ToODBCType(const LogicalType &input);
+    // Helper methods for data handling
+    static bool IsBinaryType(SQLSMALLINT sqlType);
+    static bool ReadVarData(nanodbc::result& result, idx_t colIdx, bool& isNull, std::vector<char>& output);
     
-    // Convert ODBC type to DuckDB LogicalType
-    static LogicalType TypeToLogicalType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits);
+    // Type name for error messages
+    static std::string GetTypeName(SQLSMALLINT odbcType);
 
-    // Method for reading variable-length data
-    static bool ReadVarColumn(SQLHSTMT hstmt, SQLUSMALLINT col_idx, SQLSMALLINT ctype, 
-        bool& isNull, std::vector<char>& result);
-
-    // Helper to determine if a type is binary
-    static bool IsBinaryType(SQLSMALLINT sqltype);
-
-    // Helper to determine if a type is wide (Unicode)
-    static bool IsWideType(SQLSMALLINT sqltype);
+    static bool IsVarcharType(SQLSMALLINT sqlType);
+    
+private:
+    // Lookup tables for type conversion
+    static const std::unordered_map<SQLSMALLINT, LogicalTypeId> ODBC_TO_DUCKDB_TYPES;
+    static const std::unordered_map<LogicalTypeId, SQLSMALLINT> DUCKDB_TO_ODBC_TYPES;
+    static const std::unordered_map<SQLSMALLINT, std::string> TYPE_NAMES;
 };
 
 } // namespace duckdb

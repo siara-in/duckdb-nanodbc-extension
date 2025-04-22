@@ -1,0 +1,37 @@
+# name: test/sql/odbc_error_handling.test
+# description: Test ODBC extension error handling
+# group: [odbc]
+
+require odbc
+
+statement ok
+SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'SQLite' ELSE 'DuckDB' END FROM pragma_platform());
+
+# Test invalid SQL syntax
+statement error
+SELECT * FROM odbc_query(getvariable('odbc_connection'), 'SELECT * FROM invalid syntax');
+----
+<REGEX>:Binder Error: ODBC error: Failed to prepare statement.*
+
+# Test non-existent table
+statement error
+SELECT * FROM odbc_scan('non_existent_table', getvariable('odbc_connection'));
+----
+Binder Error: No columns found for table 'non_existent_table'
+
+# Test invalid connection string/DSN
+statement error
+SELECT * FROM odbc_query('invalid_connection', 'SELECT 1');
+----
+<REGEX>:Binder Error:.*'invalid_connection':.*
+
+# Test with NULL parameters
+statement error
+SELECT * FROM odbc_query(NULL, 'SELECT 1');
+----
+<REGEX>:Binder Error:.*Failed to connect to DSN 'NULL'.*
+
+statement error
+SELECT * FROM odbc_query(getvariable('odbc_connection'), NULL);
+----
+<REGEX>:.*Binder Error: ODBC error: Failed.*

@@ -1,67 +1,134 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "odbc_db.hpp"
-#include "odbc_stmt.hpp"
-#include "odbc_headers.hpp"
-
-#include "duckdb/common/types/decimal.hpp"
-#include "duckdb/common/operator/decimal_cast_operators.hpp"
-#include "duckdb/common/numeric_utils.hpp"
+#include "odbc_connection.hpp"
+#include "odbc_statement.hpp"
+#include <cmath>
 
 namespace duckdb {
 
-struct ODBCBindData : public TableFunctionData {
-    std::string connection_string;
-    std::string dsn;
-    std::string username;
-    std::string password;
-    std::string table_name;
-    std::string sql;
-    std::vector<std::string> names;
-    std::vector<LogicalType> types;
-    bool all_varchar = false;
-    ODBCDB *global_db = nullptr;
-    TableCatalogEntry *table = nullptr;
+/**
+ * @brief Operation types for ODBC functions
+ */
+enum class OdbcOperation {
+    SCAN,    // Read a table
+    ATTACH,  // Attach database
+    QUERY    // Execute custom query
 };
 
-struct ODBCLocalState : public LocalTableFunctionState {
-    ODBCDB *db;
-    ODBCDB owned_db;
-    ODBCStatement stmt;
+/**
+ * @brief Scanner state for ODBC functions
+ */
+struct OdbcScannerState : public TableFunctionData {
+    // Connection parameters
+    ConnectionParams connection_params;
+    
+    // Operation details
+    std::string table_name;
+    std::string sql;
+    
+    // Schema information
+    std::vector<std::string> column_names;
+    std::vector<LogicalType> column_types;
+    
+    // Options
+    bool all_varchar = false;
+    std::map<std::string, Value> named_parameters;
+    
+    // Global shared connection (optional)
+    std::shared_ptr<OdbcConnection> global_connection;
+};
+
+/**
+ * @brief Local scanner state for parallel execution
+ */
+struct OdbcLocalScanState : public LocalTableFunctionState {
+    // Connection (owned or borrowed)
+    std::shared_ptr<OdbcConnection> connection;
+    std::unique_ptr<OdbcStatement> statement;
+    
+    // Scan state
     bool done = false;
     std::vector<column_t> column_ids;
     idx_t scan_count = 0;
 };
 
-struct ODBCGlobalState : public GlobalTableFunctionState {
-    explicit ODBCGlobalState(idx_t max_threads) : max_threads(max_threads) {}
-
+/**
+ * @brief Global scanner state for parallel execution
+ */
+struct OdbcGlobalScanState : public GlobalTableFunctionState {
+    explicit OdbcGlobalScanState(idx_t max_threads) : max_thread_count(max_threads) {}
+    
     std::mutex lock;
     idx_t position = 0;
-    idx_t max_threads;
-
+    idx_t max_thread_count;
+    
     idx_t MaxThreads() const override {
-        return max_threads;
+        return max_thread_count;
     }
 };
 
-class ODBCScanFunction : public TableFunction {
-public:
-    ODBCScanFunction();
+struct OdbcExecFunctionData : public TableFunctionData {
+    // Connection parameters
+    ConnectionParams connection_params;
+    
+    // SQL statement to execute
+    std::string sql;
+    
+    // State tracking
+    bool finished = false;
 };
 
-class ODBCAttachFunction : public TableFunction {
-public:
-    ODBCAttachFunction();
+struct OdbcAttachFunctionData : public TableFunctionData {
+    // Connection parameters
+    ConnectionParams connection_params;
+    
+    // Options
+    bool all_varchar = false;
+    bool overwrite = false;
+    
+    // State tracking
+    bool finished = false;
 };
 
-class ODBCQueryFunction : public TableFunction {
+/**
+ * @brief Creates standard ODBC table function instances
+ * Factory methods for scan, attach, and query operations
+ */
+class OdbcTableFunction {
 public:
-    ODBCQueryFunction();
+    static TableFunction CreateScanFunction();
+    static TableFunction CreateAttachFunction();
+    static TableFunction CreateQueryFunction();
+    static TableFunction CreateExecFunction();
 };
 
-LogicalType GetDuckDBType(SQLSMALLINT odbc_type, SQLULEN column_size, SQLSMALLINT decimal_digits);
-int GetODBCSQLType(const LogicalType &type);
+// Main binding function for all ODBC operations
+unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, 
+                                        TableFunctionBindInput &input,
+                                        vector<LogicalType> &return_types, 
+                                        vector<string> &names,
+                                        OdbcOperation operation);
+
+// Main scan function for reading data
+void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk &output);
+
+// State initialization functions
+unique_ptr<GlobalTableFunctionState> InitOdbcGlobalState(ClientContext &context, 
+                                                       TableFunctionInitInput &input);
+                                                       
+unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context, 
+                                                     TableFunctionInitInput &input,
+                                                     GlobalTableFunctionState *global_state);
+
+// Attach function for creating database views
+void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output);
+void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, DataChunk &output);
+
+// Function declarations for public API
+TableFunction OdbcScanFunction();
+TableFunction OdbcAttachFunction();
+TableFunction OdbcQueryFunction();
+TableFunction OdbcExecFunction();
 
 } // namespace duckdb

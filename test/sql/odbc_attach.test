@@ -1,0 +1,108 @@
+# name: test/sql/odbc_attach.test
+# description: Test ODBC extension attach functionality with Sakila database
+# group: [odbc]
+
+require odbc
+
+statement ok
+SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driver=SQLite Driver;Database=data/sakila.sqlite' ELSE 'Driver=DuckDB Driver;Database=data/sakila.duckdb' END FROM pragma_platform());
+
+# Test attaching the Sakila database
+statement ok
+SELECT * FROM odbc_attach(getvariable('odbc_connection'));
+
+# Test querying some basic tables
+query I
+SELECT COUNT(*) FROM actor;
+----
+200
+
+query I
+SELECT COUNT(*) FROM film;
+----
+1000
+
+query I
+SELECT COUNT(*) FROM customer;
+----
+599
+
+# Test a more complex query joining multiple tables
+query I
+SELECT COUNT(*) 
+FROM rental r
+JOIN customer c ON r.customer_id = c.customer_id
+JOIN inventory i ON r.inventory_id = i.inventory_id
+JOIN film f ON i.film_id = f.film_id;
+----
+16044
+
+# Test querying a specific actor
+query II
+SELECT first_name, last_name 
+FROM actor 
+WHERE actor_id = 1;
+----
+PENELOPE
+GUINESS
+
+# Test a more complex query with aggregation and joins
+query TR
+SELECT c.name as category, AVG(f.rental_rate::decimal(20,2))::decimal(20,2) as avg_rental_rate
+FROM film f
+JOIN film_category fc ON f.film_id = fc.film_id
+JOIN category c ON fc.category_id = c.category_id
+GROUP BY c.name
+ORDER BY avg_rental_rate DESC
+LIMIT 5;
+----
+Games
+3.25
+Travel
+3.24
+Sci-Fi
+3.22
+Comedy
+3.16
+Sports
+3.13
+
+# Test view attachment (film_list should be a view in Sakila)
+query I
+SELECT COUNT(*) FROM film_list;
+----
+5462
+
+# Test view query functionality
+query TT
+SELECT f.title, l.name
+FROM film f
+JOIN language l ON f.language_id = l.language_id
+WHERE f.film_id = 1
+LIMIT 1;
+----
+ACADEMY DINOSAUR
+English
+
+# Test customer list view (another standard Sakila view)
+query I
+SELECT COUNT(*) FROM customer_list;
+----
+599
+
+# Test query with filtering on a view
+query T
+SELECT name
+FROM customer_list
+WHERE ID = 1;
+----
+MARY SMITH
+
+# Test a more complex query that depends on views and tables
+query I
+SELECT COUNT(*)
+FROM film_list fl
+JOIN customer_list cl ON fl.category = 'Animation'
+WHERE cl.country = 'United States';
+----
+12996
