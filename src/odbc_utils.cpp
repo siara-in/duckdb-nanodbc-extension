@@ -108,7 +108,7 @@ LogicalType OdbcUtils::OdbcTypeToLogicalType(SQLSMALLINT odbcType, SQLULEN colum
         // Special handling for decimal
         if (typeId == LogicalTypeId::DECIMAL) {
             if (columnSize == 0) columnSize = 38;  // Default precision
-            if (decimalDigits == 0 && odbcType == SQL_DECIMAL) decimalDigits = 2;  // Default scale
+            // if (decimalDigits == 0 && odbcType == SQL_DECIMAL) decimalDigits = 2;  // Default scale
             return LogicalType::DECIMAL(columnSize, decimalDigits);
         }
         
