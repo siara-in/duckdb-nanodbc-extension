@@ -3,6 +3,7 @@
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/time.hpp"
+#include "duckdb/common/windows_util.hpp"
 
 namespace duckdb {
 
@@ -186,7 +187,7 @@ std::string OdbcStatement::GetString(idx_t colIdx) {
 #ifdef _WIN32
         // Get as wide string and convert to UTF-8
         std::wstring wide_str = result.get<std::wstring>(colIdx);
-        return duckdb::WindowsUtil::UnicodeToUTF8(wide_str.c_str());
+        return WindowsUtil::UnicodeToUTF8(wide_str.c_str());
 #else
         // On non-Windows platforms, get directly as UTF-8 string
         return result.get<std::string>(colIdx);
