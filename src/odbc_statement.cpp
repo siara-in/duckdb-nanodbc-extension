@@ -183,10 +183,17 @@ std::string OdbcStatement::GetString(idx_t colIdx) {
             return std::string();
         }
         
+#ifdef _WIN32
+        // Get as wide string and convert to UTF-8
+        std::wstring wide_str = result.get<std::wstring>(colIdx);
+        return duckdb::WindowsUtil::UnicodeToUTF8(wide_str.c_str());
+#else
+        // On non-Windows platforms, get directly as UTF-8 string
         return result.get<std::string>(colIdx);
+#endif
     } catch (const nanodbc::database_error& e) {
         OdbcUtils::ThrowException("get string value", e);
-        return std::string(); // Won't reach here due to exception
+        return std::string();
     }
 }
 
