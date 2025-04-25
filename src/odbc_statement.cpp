@@ -174,6 +174,15 @@ bool OdbcStatement::IsNull(idx_t colIdx) const {
     return result.is_null(colIdx);
 }
 
+// In odbc_statement.cpp
+#ifdef _WIN32
+extern "C" {
+    // Declare the external function from sqlite3_api_wrapper
+    extern char* sqlite3_win32_mbcs_to_utf8_v2(const char* zText, int useAnsi);
+    extern void sqlite3_free(void* ptr);
+}
+#endif
+
 std::string OdbcStatement::GetString(idx_t colIdx) {
     if (!has_result) {
         throw BinderException("No result available");
@@ -184,18 +193,23 @@ std::string OdbcStatement::GetString(idx_t colIdx) {
             return std::string();
         }
         
+        std::string str = result.get<std::string>(colIdx);
+        
 #ifdef _WIN32
-        // Get the string from nanodbc
-        auto str = result.get<std::string>(colIdx);
+        // Convert from MBCS (likely Windows-1252) to UTF-8
+        // useAnsi = 1 means use CP_ACP (ANSI Code Page, typically Windows-1252)
+        char* utf8_str = sqlite3_win32_mbcs_to_utf8_v2(str.c_str(), 1);
         
-        // Convert UTF-8 to wide string (UTF-16)
-        std::wstring wide_str = WindowsUtil::UTF8ToUnicode(str.c_str());
+        if (utf8_str) {
+            std::string result(utf8_str);
+            sqlite3_free(utf8_str);  // Don't forget to free the allocated memory
+            return result;
+        }
         
-        // Convert back to UTF-8 - this ensures valid UTF-8 encoding
-        return WindowsUtil::UnicodeToUTF8(wide_str.c_str());
+        // If conversion fails, return original string
+        return str;
 #else
-        // On non-Windows platforms, get directly as UTF-8 string
-        return result.get<std::string>(colIdx);
+        return str;
 #endif
     } catch (const nanodbc::database_error& e) {
         OdbcUtils::ThrowException("get string value", e);
