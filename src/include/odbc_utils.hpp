@@ -32,7 +32,7 @@ public:
 
     static bool IsVarcharType(SQLSMALLINT sqlType);
 #ifdef _WIN32
-    static std::string ConvertToUTF8(const std::string& input, int codepage)
+    static std::string ConvertToUTF8(const std::string& input, int codepage);
 #endif
 private:
     // Lookup tables for type conversion
