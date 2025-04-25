@@ -5,6 +5,7 @@
 #include "odbc_statement.hpp"
 #include <cmath>
 
+
 namespace duckdb {
 
 /**
@@ -34,6 +35,7 @@ struct OdbcScannerState : public TableFunctionData {
     // Options
     bool all_varchar = false;
     std::map<std::string, Value> named_parameters;
+    int windows_client_charset = 65001;  // Default to UTF-8 (no conversion)
     
     // Global shared connection (optional)
     std::shared_ptr<OdbcConnection> global_connection;
@@ -86,6 +88,7 @@ struct OdbcAttachFunctionData : public TableFunctionData {
     // Options
     bool all_varchar = false;
     bool overwrite = false;
+    int windows_client_charset = 65001;  // Default to UTF-8 (no conversion)
     
     // State tracking
     bool finished = false;

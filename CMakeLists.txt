@@ -6,6 +6,8 @@ set(TARGET_NAME odbc)
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
+set(NANODBC_ENABLE_UNICODE ON CACHE BOOL "Enable Unicode support in nanodbc")
+
 project(${TARGET_NAME})
 
 # Include directories

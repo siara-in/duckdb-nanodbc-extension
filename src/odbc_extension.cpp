@@ -21,13 +21,7 @@ static void RegisterOdbcFunctions(DatabaseInstance &instance) {
 static void LoadInternal(DatabaseInstance &instance) {
     // Register the ODBC functions
     RegisterOdbcFunctions(instance);
-    
-    // Add extension options
-    auto &config = DBConfig::GetConfig(instance);
-    
-    config.AddExtensionOption("odbc_all_varchar", 
-                            "Load all ODBC columns as VARCHAR columns", 
-                            LogicalType(LogicalTypeId::BOOLEAN));
+
 }
 
 void OdbcExtension::Load(DuckDB &db) {

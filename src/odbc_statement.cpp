@@ -3,6 +3,7 @@
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/time.hpp"
+#include "duckdb/common/windows_util.hpp"
 
 namespace duckdb {
 
@@ -184,9 +185,10 @@ std::string OdbcStatement::GetString(idx_t colIdx) {
         }
         
         return result.get<std::string>(colIdx);
+
     } catch (const nanodbc::database_error& e) {
         OdbcUtils::ThrowException("get string value", e);
-        return std::string(); // Won't reach here due to exception
+        return std::string();
     }
 }
 
