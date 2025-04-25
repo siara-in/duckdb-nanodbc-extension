@@ -185,8 +185,13 @@ std::string OdbcStatement::GetString(idx_t colIdx) {
         }
         
 #ifdef _WIN32
-        // Get as wide string and convert to UTF-8
-        std::wstring wide_str = result.get<std::wstring>(colIdx);
+        // Get the string from nanodbc
+        auto str = result.get<std::string>(colIdx);
+        
+        // Convert UTF-8 to wide string (UTF-16)
+        std::wstring wide_str = WindowsUtil::UTF8ToUnicode(str.c_str());
+        
+        // Convert back to UTF-8 - this ensures valid UTF-8 encoding
         return WindowsUtil::UnicodeToUTF8(wide_str.c_str());
 #else
         // On non-Windows platforms, get directly as UTF-8 string
