@@ -183,4 +183,55 @@ bool OdbcUtils::IsVarcharType(SQLSMALLINT sqlType) {
            sqlType == SQL_WVARCHAR || sqlType == SQL_WLONGVARCHAR;
 }
 
+#ifdef _WIN32
+std::string OdbcUtils::ConvertToUTF8(const std::string& input, int codepage) {
+    if (input.empty()) {
+        return input;
+    }
+    
+    // First, convert from specified codepage to UTF-16
+    int wide_size = MultiByteToWideChar(codepage, MB_ERR_INVALID_CHARS,
+                                      input.c_str(), -1, nullptr, 0);
+    
+    if (wide_size == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    std::vector<wchar_t> wide_str(wide_size);
+    if (MultiByteToWideChar(codepage, MB_ERR_INVALID_CHARS, 
+                           input.c_str(), -1, 
+                           wide_str.data(), wide_size) == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    // Then convert from UTF-16 to UTF-8
+    int utf8_size = WideCharToMultiByte(CP_UTF8, 0,
+                                       wide_str.data(), -1,
+                                       nullptr, 0, nullptr, nullptr);
+    
+    if (utf8_size == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    std::vector<char> utf8_str(utf8_size);
+    if (WideCharToMultiByte(CP_UTF8, 0,
+                           wide_str.data(), -1,
+                           utf8_str.data(), utf8_size,
+                           nullptr, nullptr) == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    // Remove null terminator if present
+    if (utf8_size > 0 && utf8_str[utf8_size - 1] == '\0') {
+        return std::string(utf8_str.data(), utf8_size - 1);
+    }
+    
+    return std::string(utf8_str.data(), utf8_size);
+}
+#endif
+
 } // namespace duckdb

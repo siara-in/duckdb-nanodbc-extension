@@ -123,7 +123,34 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                                         vector<LogicalType> &return_types, vector<string> &names,
                                         OdbcOperation operation) {
     auto result = make_uniq<OdbcScannerState>();
+    // Get extension option for Windows charset
+    auto &config = DBConfig::GetConfig(context);
     
+#ifdef _WIN32
+    Value charset_value;
+    if (config.options.extensions.find("odbc_windows_charset") != config.options.extensions.end()) {
+        charset_value = config.options.extensions["odbc_windows_charset"];
+    } else {
+        charset_value = Value("CP_UTF8");  // Default
+    }
+    
+    std::string charset_str = charset_value.ToString();
+    
+    if (charset_str == "CP_UTF8" || charset_str == "65001") {
+        result->windows_client_charset = CP_UTF8;
+    } else if (charset_str == "CP_ACP" || charset_str == "0") {
+        result->windows_client_charset = CP_ACP;
+    } else if (charset_str == "1252" || charset_str == "CP1252") {
+        result->windows_client_charset = 1252;
+    } else {
+        // Try to parse as integer
+        try {
+            result->windows_client_charset = std::stoi(charset_str);
+        } catch (...) {
+            throw BinderException("Invalid odbc_windows_charset value: " + charset_str);
+        }
+    }
+#endif    
     // Process connection information based on operation
     switch (operation) {
         case OdbcOperation::SCAN: {
@@ -458,6 +485,11 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
                 }
                 case LogicalTypeId::VARCHAR: {
                     std::string str_val = state.statement->GetString(col_idx);
+#ifdef _WIN32
+                    if (bind_data.windows_client_charset != CP_UTF8) {
+                        str_val = OdbcUtils::ConvertToUTF8(str_val, bind_data.windows_client_charset);
+                    }
+#endif
                     FlatVector::GetData<string_t>(out_vec)[out_idx] = 
                         StringVector::AddString(out_vec, str_val);
                     break;

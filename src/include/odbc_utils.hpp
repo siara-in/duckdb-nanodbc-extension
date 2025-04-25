@@ -31,7 +31,9 @@ public:
     static std::string GetTypeName(SQLSMALLINT odbcType);
 
     static bool IsVarcharType(SQLSMALLINT sqlType);
-    
+#ifdef _WIN32
+    static std::string ConvertToUTF8(const std::string& input, int codepage)
+#endif
 private:
     // Lookup tables for type conversion
     static const std::unordered_map<SQLSMALLINT, LogicalTypeId> ODBC_TO_DUCKDB_TYPES;
