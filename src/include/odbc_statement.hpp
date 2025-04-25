@@ -71,6 +71,9 @@ public:
 private:
     bool has_result = false;
     bool executed = false;
+#ifdef _WIN32
+    static std::string ConvertWin1252ToUTF8(const std::string& input);
+#endif
 };
 
 } // namespace duckdb

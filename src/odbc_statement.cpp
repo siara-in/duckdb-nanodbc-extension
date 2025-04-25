@@ -196,18 +196,8 @@ std::string OdbcStatement::GetString(idx_t colIdx) {
         std::string str = result.get<std::string>(colIdx);
         
 #ifdef _WIN32
-        // Convert from MBCS (likely Windows-1252) to UTF-8
-        // useAnsi = 1 means use CP_ACP (ANSI Code Page, typically Windows-1252)
-        char* utf8_str = sqlite3_win32_mbcs_to_utf8_v2(str.c_str(), 1);
-        
-        if (utf8_str) {
-            std::string result(utf8_str);
-            sqlite3_free(utf8_str);  // Don't forget to free the allocated memory
-            return result;
-        }
-        
-        // If conversion fails, return original string
-        return str;
+        // Convert from Windows-1252 to UTF-8
+        return ConvertWin1252ToUTF8(str);
 #else
         return str;
 #endif
@@ -216,6 +206,57 @@ std::string OdbcStatement::GetString(idx_t colIdx) {
         return std::string();
     }
 }
+
+#ifdef _WIN32
+std::string OdbcStatement::ConvertWin1252ToUTF8(const std::string& input) {
+    if (input.empty()) {
+        return input;
+    }
+    
+    // First, convert from Windows-1252 to UTF-16
+    int wide_size = MultiByteToWideChar(1252, MB_ERR_INVALID_CHARS,
+                                      input.c_str(), -1, nullptr, 0);
+    
+    if (wide_size == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    std::vector<wchar_t> wide_str(wide_size);
+    if (MultiByteToWideChar(1252, MB_ERR_INVALID_CHARS, 
+                           input.c_str(), -1, 
+                           wide_str.data(), wide_size) == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    // Then convert from UTF-16 to UTF-8
+    int utf8_size = WideCharToMultiByte(CP_UTF8, 0,
+                                       wide_str.data(), -1,
+                                       nullptr, 0, nullptr, nullptr);
+    
+    if (utf8_size == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    std::vector<char> utf8_str(utf8_size);
+    if (WideCharToMultiByte(CP_UTF8, 0,
+                           wide_str.data(), -1,
+                           utf8_str.data(), utf8_size,
+                           nullptr, nullptr) == 0) {
+        // If conversion fails, return original string
+        return input;
+    }
+    
+    // Remove null terminator if present
+    if (utf8_size > 0 && utf8_str[utf8_size - 1] == '\0') {
+        return std::string(utf8_str.data(), utf8_size - 1);
+    }
+    
+    return std::string(utf8_str.data(), utf8_size);
+}
+#endif
 
 int32_t OdbcStatement::GetInt32(idx_t colIdx) {
     if (!has_result) {
