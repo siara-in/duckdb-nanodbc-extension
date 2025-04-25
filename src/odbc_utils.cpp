@@ -184,6 +184,7 @@ bool OdbcUtils::IsVarcharType(SQLSMALLINT sqlType) {
 }
 
 #ifdef _WIN32
+#include <windows.h>
 std::string OdbcUtils::ConvertToUTF8(const std::string& input, int codepage) {
     if (input.empty()) {
         return input;

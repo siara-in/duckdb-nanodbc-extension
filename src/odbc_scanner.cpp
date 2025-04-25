@@ -32,6 +32,7 @@ TableFunction OdbcTableFunction::CreateScanFunction() {
     
     // Add named parameters
     result.named_parameters["all_varchar"] = LogicalType(LogicalTypeId::BOOLEAN);
+    result.named_parameters["windows_charset"] = LogicalType(LogicalTypeId::VARCHAR);
     
     return result;
 }
@@ -66,6 +67,24 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
                 result->all_varchar = BooleanValue::Get(kv.second);
             } else if (kv.first == "overwrite") {
                 result->overwrite = BooleanValue::Get(kv.second);
+            } else if (kv.first == "windows_charset") {
+                std::string charset_str = StringValue::Get(kv.second);
+                
+                // Process charset value - platform independent parsing  
+                if (charset_str == "CP_UTF8" || charset_str == "65001") {
+                    result->windows_client_charset = 65001;  // CP_UTF8
+                } else if (charset_str == "CP_ACP" || charset_str == "0") {
+                    result->windows_client_charset = 0;      // CP_ACP
+                } else if (charset_str == "1252" || charset_str == "CP1252") {
+                    result->windows_client_charset = 1252;
+                } else {
+                    // Try to parse as integer
+                    try {
+                        result->windows_client_charset = std::stoi(charset_str);
+                    } catch (...) {
+                        throw BinderException("Invalid windows_charset value: " + charset_str);
+                    }
+                }
             }
         }
         
@@ -79,6 +98,7 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
     // Add named parameters
     result.named_parameters["all_varchar"] = LogicalTypeId::BOOLEAN;
     result.named_parameters["overwrite"] = LogicalTypeId::BOOLEAN;
+    result.named_parameters["windows_charset"] = LogicalTypeId::VARCHAR;
     
     return result;
 }
@@ -123,34 +143,7 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                                         vector<LogicalType> &return_types, vector<string> &names,
                                         OdbcOperation operation) {
     auto result = make_uniq<OdbcScannerState>();
-    // Get extension option for Windows charset
-    auto &config = DBConfig::GetConfig(context);
     
-#ifdef _WIN32
-    Value charset_value;
-    if (config.options.extensions.find("odbc_windows_charset") != config.options.extensions.end()) {
-        charset_value = config.options.extensions["odbc_windows_charset"];
-    } else {
-        charset_value = Value("CP_UTF8");  // Default
-    }
-    
-    std::string charset_str = charset_value.ToString();
-    
-    if (charset_str == "CP_UTF8" || charset_str == "65001") {
-        result->windows_client_charset = CP_UTF8;
-    } else if (charset_str == "CP_ACP" || charset_str == "0") {
-        result->windows_client_charset = CP_ACP;
-    } else if (charset_str == "1252" || charset_str == "CP1252") {
-        result->windows_client_charset = 1252;
-    } else {
-        // Try to parse as integer
-        try {
-            result->windows_client_charset = std::stoi(charset_str);
-        } catch (...) {
-            throw BinderException("Invalid odbc_windows_charset value: " + charset_str);
-        }
-    }
-#endif    
     // Process connection information based on operation
     switch (operation) {
         case OdbcOperation::SCAN: {
@@ -227,6 +220,25 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
     for (auto &kv : input.named_parameters) {
         if (kv.first == "all_varchar") {
             result->all_varchar = BooleanValue::Get(kv.second);
+        }
+        else if (kv.first == "windows_charset") {
+            std::string charset_str = StringValue::Get(kv.second);
+            
+            // Process charset value - platform independent parsing
+            if (charset_str == "CP_UTF8" || charset_str == "65001") {
+                result->windows_client_charset = 65001;  // CP_UTF8
+            } else if (charset_str == "CP_ACP" || charset_str == "0") {
+                result->windows_client_charset = 0;      // CP_ACP
+            } else if (charset_str == "1252" || charset_str == "CP1252") {
+                result->windows_client_charset = 1252;
+            } else {
+                // Try to parse as integer
+                try {
+                    result->windows_client_charset = std::stoi(charset_str);
+                } catch (...) {
+                    throw BinderException("Invalid windows_charset value: " + charset_str);
+                }
+            }
         }
         
         // Store all parameters for later use
@@ -486,7 +498,7 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
                 case LogicalTypeId::VARCHAR: {
                     std::string str_val = state.statement->GetString(col_idx);
 #ifdef _WIN32
-                    if (bind_data.windows_client_charset != CP_UTF8) {
+                    if (bind_data.windows_client_charset != 65001) {  // CP_UTF8
                         str_val = OdbcUtils::ConvertToUTF8(str_val, bind_data.windows_client_charset);
                     }
 #endif
@@ -601,6 +613,9 @@ void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataCh
             if (attach_data.all_varchar) {
                 named_params["all_varchar"] = Value::BOOLEAN(true);
             }
+            if (attach_data.windows_client_charset != 65001) {  // CP_UTF8
+                named_params["windows_charset"] = Value::INTEGER(attach_data.windows_client_charset);
+            }
             
             auto table_func_relation = dconn.TableFunction("odbc_scan", duckdb_args, named_params);
             table_func_relation->CreateView(table_name, attach_data.overwrite, false);
@@ -640,6 +655,10 @@ void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataCh
             duckdb::named_parameter_map_t named_params;
             if (attach_data.all_varchar) {
                 named_params["all_varchar"] = Value::BOOLEAN(true);
+            }
+
+            if (attach_data.windows_client_charset != 65001) {  // CP_UTF8
+                named_params["windows_charset"] = Value::INTEGER(attach_data.windows_client_charset);
             }
             
             auto query_func_relation = dconn.TableFunction("odbc_query", duckdb_args, named_params);
@@ -699,6 +718,7 @@ TableFunction OdbcTableFunction::CreateExecFunction() {
     
     // Add required sql parameter
     result.named_parameters["sql"] = LogicalType(LogicalTypeId::VARCHAR);
+    result.named_parameters["windows_charset"] = LogicalType(LogicalTypeId::VARCHAR);
     
     return result;
 }

@@ -21,17 +21,7 @@ static void RegisterOdbcFunctions(DatabaseInstance &instance) {
 static void LoadInternal(DatabaseInstance &instance) {
     // Register the ODBC functions
     RegisterOdbcFunctions(instance);
-    
-    // Add extension options
-    auto &config = DBConfig::GetConfig(instance);
-    
-    config.AddExtensionOption("odbc_all_varchar", 
-                            "Load all ODBC columns as VARCHAR columns", 
-                            LogicalType(LogicalTypeId::BOOLEAN));
-   config.AddExtensionOption("odbc_windows_charset", 
-                            "Character encoding for Windows ODBC clients (e.g., 'CP_UTF8', '1252', 'CP_ACP')", 
-                            LogicalType(LogicalTypeId::VARCHAR),
-                            Value("CP_UTF8"));  // Default to UTF-8 (no conversion)
+
 }
 
 void OdbcExtension::Load(DuckDB &db) {
