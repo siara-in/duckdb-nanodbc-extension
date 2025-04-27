@@ -10,7 +10,7 @@ SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driv
 # Test integer types with actor table
 query III
 SELECT actor_id, TYPEOF(actor_id), COUNT(*)
-FROM odbc_scan('actor', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='actor', connection=getvariable('odbc_connection'))
 GROUP BY actor_id, TYPEOF(actor_id)
 ORDER BY actor_id
 LIMIT 3;
@@ -29,7 +29,7 @@ DOUBLE
 # Test varchar type with actor names
 query TTT
 SELECT first_name, last_name, TYPEOF(first_name)
-FROM odbc_scan('actor', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='actor', connection=getvariable('odbc_connection'))
 WHERE actor_id = 1;
 ----
 PENELOPE
@@ -39,7 +39,7 @@ VARCHAR
 # Test timestamp type with rental table
 query TT
 SELECT TYPEOF(rental_date), TYPEOF(return_date)
-FROM odbc_scan('rental', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='rental', connection=getvariable('odbc_connection'))
 LIMIT 1;
 ----
 TIMESTAMP
@@ -48,7 +48,7 @@ TIMESTAMP
 # Test decimal/numeric types with payment table
 query II
 SELECT SUM(amount::double), TYPEOF(amount::double)
-FROM odbc_scan('payment', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='payment', connection=getvariable('odbc_connection'))
 GROUP BY TYPEOF(amount::double)
 LIMIT 1;
 ----
@@ -63,7 +63,7 @@ SELECT
     description, 
     rental_rate, 
     length
-FROM odbc_scan('film', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='film', connection=getvariable('odbc_connection'))
 WHERE film_id = 1;
 ----
 1
@@ -75,7 +75,7 @@ A Epic Drama of a Feminist And a Mad Scientist who must Battle a Teacher in The 
 # Test projection push-down
 query T
 SELECT title 
-FROM odbc_scan('film', getvariable('odbc_connection')) 
+FROM odbc_scan(table_name='film', connection=getvariable('odbc_connection')) 
 WHERE film_id = 1;
 ----
 ACADEMY DINOSAUR
@@ -83,10 +83,10 @@ ACADEMY DINOSAUR
 # Test with a more complex query using joins
 query TTR
 SELECT c.name, f.title, f.rental_rate
-FROM odbc_scan('film', getvariable('odbc_connection')) f
-JOIN odbc_scan('film_category', getvariable('odbc_connection')) fc 
+FROM odbc_scan(table_name='film', connection=getvariable('odbc_connection')) f
+JOIN odbc_scan(table_name='film_category', connection=getvariable('odbc_connection')) fc 
     ON f.film_id = fc.film_id
-JOIN odbc_scan('category', getvariable('odbc_connection')) c 
+JOIN odbc_scan(table_name='category', connection=getvariable('odbc_connection')) c 
     ON fc.category_id = c.category_id
 WHERE f.film_id = 1;
 ----
@@ -97,7 +97,7 @@ ACADEMY DINOSAUR
 # Test boolean type with film table
 query IT
 SELECT special_features IS NOT NULL, TYPEOF(special_features)
-FROM odbc_scan('film', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='film', connection=getvariable('odbc_connection'))
 WHERE film_id = 1;
 ----
 true
@@ -106,7 +106,7 @@ VARCHAR
 # Test with filtering (processed in DuckDB, not pushed down)
 query I
 SELECT COUNT(*) 
-FROM odbc_scan('film', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='film', connection=getvariable('odbc_connection'))
 WHERE rental_rate::decimal(10,2) > 4.0;
 ----
 336
@@ -114,7 +114,7 @@ WHERE rental_rate::decimal(10,2) > 4.0;
 # Test with aggregation
 query IR
 SELECT rating, AVG(rental_rate::decimal(20,2))
-FROM odbc_scan('film', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='film', connection=getvariable('odbc_connection'))
 GROUP BY rating
 ORDER BY rating;
 ----
@@ -135,7 +135,7 @@ SELECT
     TYPEOF(film_id), 
     TYPEOF(rental_rate), 
     TYPEOF(last_update)
-FROM odbc_scan('film', getvariable('odbc_connection'), all_varchar=>true)
+FROM odbc_scan(table_name='film', connection=getvariable('odbc_connection'), all_varchar=>true)
 LIMIT 1;
 ----
 VARCHAR
@@ -151,7 +151,7 @@ SELECT
     city_id,
     district,
     postal_code
-FROM odbc_scan('address', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='address', connection=getvariable('odbc_connection'))
 WHERE address_id = 1;
 ----
 1
@@ -164,7 +164,7 @@ NULL
 # Test handling of NULL values
 query I
 SELECT COUNT(*) 
-FROM odbc_scan('address', getvariable('odbc_connection'))
+FROM odbc_scan(table_name='address', connection=getvariable('odbc_connection'))
 WHERE address2 IS NULL;
 ----
 603

@@ -1,4 +1,4 @@
-# name: test/sql/odbc_wstring_support.test
+# name: test/sql/odbc_unicode.test
 # description: Test ODBC extension wstring/Unicode support
 # group: [odbc]
 
@@ -9,18 +9,18 @@ SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driv
 
 # Drop test table if it exists
 statement ok
-CALL odbc_exec(getvariable('odbc_connection'), sql=>'DROP TABLE IF EXISTS unicode_test;');
+CALL odbc_exec(connection=getvariable('odbc_connection'), sql='DROP TABLE IF EXISTS unicode_test;');
 
 # Create a test table with Unicode text
 statement ok
-CALL odbc_exec(getvariable('odbc_connection'), sql=>'CREATE TABLE unicode_test (
+CALL odbc_exec(connection=getvariable('odbc_connection'), sql='CREATE TABLE unicode_test (
   id INTEGER PRIMARY KEY,
   description TEXT
 );');
 
 # Insert multilingual data
 statement ok
-CALL odbc_exec(getvariable('odbc_connection'), sql=>"INSERT INTO unicode_test VALUES
+CALL odbc_exec(connection=getvariable('odbc_connection'), sql="INSERT INTO unicode_test VALUES
 (1, 'English: Hello World!'),
 (2, 'Chinese: 你好，世界！'),
 (3, 'Russian: Привет, мир!'),
@@ -34,7 +34,7 @@ CALL odbc_exec(getvariable('odbc_connection'), sql=>"INSERT INTO unicode_test VA
 
 # Test Unicode data retrieval with odbc_scan
 query IT
-SELECT id, description FROM odbc_scan('unicode_test', getvariable('odbc_connection')) ORDER BY id;
+SELECT id, description FROM odbc_scan(table_name='unicode_test', connection=getvariable('odbc_connection')) ORDER BY id;
 ----
 1	English: Hello World!
 2	Chinese: 你好，世界！
@@ -49,7 +49,7 @@ SELECT id, description FROM odbc_scan('unicode_test', getvariable('odbc_connecti
 
 # Test with odbc_query
 query IT
-SELECT id, description FROM odbc_query(getvariable('odbc_connection'), 'SELECT * FROM unicode_test ORDER BY id;');
+SELECT id, description FROM odbc_query(connection=getvariable('odbc_connection'), query='SELECT * FROM unicode_test ORDER BY id;');
 ----
 1	English: Hello World!
 2	Chinese: 你好，世界！
@@ -64,7 +64,7 @@ SELECT id, description FROM odbc_query(getvariable('odbc_connection'), 'SELECT *
 
 # Test with all_varchar parameter
 query TT
-SELECT id, description FROM odbc_scan('unicode_test', getvariable('odbc_connection'), all_varchar=true) WHERE id::int BETWEEN 2 AND 5 ORDER BY id;
+SELECT id, description FROM odbc_scan(table_name='unicode_test', connection=getvariable('odbc_connection'), all_varchar=true) WHERE id::int BETWEEN 2 AND 5 ORDER BY id;
 ----
 2	Chinese: 你好，世界！
 3	Russian: Привет, мир!
@@ -73,12 +73,12 @@ SELECT id, description FROM odbc_scan('unicode_test', getvariable('odbc_connecti
 
 # Test filtering with Unicode text
 query I
-SELECT id FROM odbc_query(getvariable('odbc_connection'), 'SELECT id FROM unicode_test WHERE description LIKE ''%你好%'';');
+SELECT id FROM odbc_query(connection=getvariable('odbc_connection'), query='SELECT id FROM unicode_test WHERE description LIKE ''%你好%'';');
 ----
 2
 
 # Test with different subsets of columns
 query T
-SELECT description FROM odbc_scan('unicode_test', getvariable('odbc_connection')) WHERE id = 9;
+SELECT description FROM odbc_scan(table_name='unicode_test', connection=getvariable('odbc_connection')) WHERE id = 9;
 ----
 Emoji: 👋🌍🌎🌏✨

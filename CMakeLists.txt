@@ -21,7 +21,7 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
 # Add explicit export definitions for odbc_init and odbc_version
 add_definitions(-DODBC_INIT_EXPORT)
 
-# macOS-specific settings
+# Platform-specific settings
 if(APPLE)
     # Support for Apple Silicon (ARM64)
     set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
@@ -40,6 +40,12 @@ if(APPLE)
     set(CMAKE_INSTALL_RPATH "@loader_path")
     set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
     set(CMAKE_MACOSX_RPATH ON)
+elseif(UNIX AND NOT APPLE)
+    # On Linux, include iconv if available
+    find_library(ICONV_LIBRARY NAMES iconv)
+    if(ICONV_LIBRARY)
+        message(STATUS "Found iconv library: ${ICONV_LIBRARY}")
+    endif()
 endif()
 
 # Platform-specific handling for ODBC
@@ -60,8 +66,8 @@ else()
     message(STATUS "Found ODBC libraries: ${ODBC_LIBRARIES}")
     message(STATUS "Found ODBC includes: ${ODBC_INCLUDE_DIRS}")
 
-    # Add iconv to ODBC libraries on macOS
-    if(APPLE AND ICONV_LIBRARY)
+    # Add iconv to ODBC libraries on non-Windows platforms
+    if(ICONV_LIBRARY)
         list(APPEND ODBC_LIBRARIES ${ICONV_LIBRARY})
         message(STATUS "Added iconv to ODBC libraries: ${ODBC_LIBRARIES}")
     endif()
@@ -87,7 +93,10 @@ set(EXTENSION_SOURCES
     src/odbc_utils.cpp
     src/odbc_scanner.cpp
     src/odbc_extension.cpp
-    src/odbc_exports.cpp)
+    src/odbc_exports.cpp
+    src/odbc_parameters.cpp
+    src/odbc_encoding.cpp
+)
 
 # Combined sources
 set(ALL_SOURCES ${EXTENSION_SOURCES} ${NANODBC_SOURCES})
@@ -97,7 +106,6 @@ add_library(${EXTENSION_NAME} STATIC ${ALL_SOURCES})
 target_link_libraries(${EXTENSION_NAME} PRIVATE ${ODBC_LIBRARIES})
 
 # Build loadable extension with ODBC parameter
-# Use the actual path to the ODBC library instead of -lodbc
 set(PARAMETERS "-l${ODBC_LIBRARIES}")
 build_loadable_extension(${TARGET_NAME} "${PARAMETERS}" ${ALL_SOURCES})
 
