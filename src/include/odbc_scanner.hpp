@@ -1,10 +1,10 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "odbc_connection.hpp"
+#include "odbc_connection.hpp" 
 #include "odbc_statement.hpp"
+#include "odbc_parameters.hpp"
 #include <cmath>
-
 
 namespace duckdb {
 
@@ -14,7 +14,8 @@ namespace duckdb {
 enum class OdbcOperation {
     SCAN,    // Read a table
     ATTACH,  // Attach database
-    QUERY    // Execute custom query
+    QUERY,   // Execute custom query
+    EXEC     // Execute statement without results
 };
 
 /**
@@ -33,9 +34,7 @@ struct OdbcScannerState : public TableFunctionData {
     std::vector<LogicalType> column_types;
     
     // Options
-    bool all_varchar = false;
-    std::map<std::string, Value> named_parameters;
-    int windows_client_charset = 65001;  // Default to UTF-8 (no conversion)
+    OdbcOptions options;
     
     // Global shared connection (optional)
     std::shared_ptr<OdbcConnection> global_connection;
@@ -70,33 +69,27 @@ struct OdbcGlobalScanState : public GlobalTableFunctionState {
     }
 };
 
+/**
+ * @brief Exec function data
+ */
 struct OdbcExecFunctionData : public TableFunctionData {
-    // Connection parameters
     ConnectionParams connection_params;
-    
-    // SQL statement to execute
     std::string sql;
-    
-    // State tracking
+    OdbcOptions options;
     bool finished = false;
 };
 
+/**
+ * @brief Attach function data
+ */
 struct OdbcAttachFunctionData : public TableFunctionData {
-    // Connection parameters
     ConnectionParams connection_params;
-    
-    // Options
-    bool all_varchar = false;
-    bool overwrite = false;
-    int windows_client_charset = 65001;  // Default to UTF-8 (no conversion)
-    
-    // State tracking
+    OdbcOptions options;
     bool finished = false;
 };
 
 /**
  * @brief Creates standard ODBC table function instances
- * Factory methods for scan, attach, and query operations
  */
 class OdbcTableFunction {
 public:

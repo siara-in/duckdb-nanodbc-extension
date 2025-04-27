@@ -9,7 +9,7 @@ SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driv
 
 # Test attaching the Sakila database
 statement ok
-SELECT * FROM odbc_attach(getvariable('odbc_connection'));
+SELECT * FROM odbc_attach(connection=getvariable('odbc_connection'));
 
 # Test querying some basic tables
 query I

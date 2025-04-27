@@ -9,10 +9,10 @@ SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driv
 
 # Create a test table with different types
 statement ok
-CALL odbc_exec(getvariable('odbc_connection'), sql=>'DROP TABLE IF EXISTS mixed_types;');
+CALL odbc_exec(connection=getvariable('odbc_connection'), sql='DROP TABLE IF EXISTS mixed_types;');
 
 statement ok
-CALL odbc_exec(getvariable('odbc_connection'), sql=>'CREATE TABLE mixed_types (
+CALL odbc_exec(connection=getvariable('odbc_connection'), sql='CREATE TABLE mixed_types (
   id INTEGER, 
   name TEXT,
   value REAL,
@@ -20,21 +20,21 @@ CALL odbc_exec(getvariable('odbc_connection'), sql=>'CREATE TABLE mixed_types (
 );');
 
 statement ok
-CALL odbc_exec(getvariable('odbc_connection'), sql=>'INSERT INTO mixed_types VALUES 
+CALL odbc_exec(connection=getvariable('odbc_connection'), sql='INSERT INTO mixed_types VALUES 
   (1, ''one'', 1.1, 1),
   (2, ''two'', 2.2, 0),
   (3, ''three'', 3.3, 1);');
 
 # Test with all_varchar parameter
 query ITRI
-SELECT * FROM odbc_scan('mixed_types', getvariable('odbc_connection'), all_varchar=false) ORDER BY id;
+SELECT * FROM odbc_scan(table_name='mixed_types', connection=getvariable('odbc_connection'), all_varchar=false) ORDER BY id;
 ----
 1	one	1.1	true
 2	two	2.2	false
 3	three	3.3	true
 
 query TTT
-SELECT id, name, value FROM odbc_scan('mixed_types', getvariable('odbc_connection'), all_varchar=true) ORDER BY id;
+SELECT id, name, value FROM odbc_scan(table_name='mixed_types', connection=getvariable('odbc_connection'), all_varchar=true) ORDER BY id;
 ----
 1	one	1.100000
 2	two	2.200000
