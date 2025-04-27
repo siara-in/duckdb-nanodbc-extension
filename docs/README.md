@@ -236,13 +236,10 @@ This extension has been tested with various database systems across different pl
 |-----------------|:-------:|:-----:|:-----:|
 | SQL Server | ✅ | ✅ | ✅ |
 | Microsoft Access | ✅ | - | - |
-| MySQL | ✅ | ✅ | ✅ |
-| PostgreSQL | ✅ | ✅ | ✅ |
-| MariaDB | ✅ | ✅ | ✅ |
-| Oracle | ✅ | ✅ | ✅ |
-| DB2 | ✅ | ✅ | ✅ |
-| Teradata | ✅ | ✅ | ✅ |
+| Snowflake | ✅ | ✅ | ✅ |
 | SQLite | ✅ | ✅ | ✅ |
+| PostgreSQL | ✅ | ✅ | ✅ |
+| MySQL | ✅ | ✅ | ✅ |
 
 _Note: Compatibility depends on the availability of ODBC drivers for your platform. The matrix above shows databases I've verified, but any database with proper ODBC drivers should work._
 
