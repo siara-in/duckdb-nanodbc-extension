@@ -2,7 +2,9 @@
 # description: Test ODBC extension's table scanning functionality with various data types
 # group: [odbc]
 
-require odbc
+require nanodbc
+
+require-env NANODBC_ENVIRONMENT
 
 statement ok
 SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driver=SQLite Driver;Database=data/sakila.sqlite' ELSE 'Driver=DuckDB Driver;Database=data/sakila.duckdb' END FROM pragma_platform());

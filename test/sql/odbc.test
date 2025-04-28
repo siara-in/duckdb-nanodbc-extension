@@ -3,7 +3,9 @@
 # group: [odbc]
 
 # Require statement will ensure this test is run with this extension loaded
-require odbc
+require nanodbc
+
+require-env NANODBC_ENVIRONMENT
 
 statement ok
 set variable odbc_connection = (select case platform when 'osx_arm64' then 'Driver={SQLite Driver};Database=:memory:' else 'Driver={DuckDB Driver};Database=:memory:;' end con from pragma_platform())

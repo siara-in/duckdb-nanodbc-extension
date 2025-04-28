@@ -2,7 +2,9 @@
 # description: Test ODBC extension error handling
 # group: [odbc]
 
-require odbc
+require nanodbc
+
+require-env NANODBC_ENVIRONMENT
 
 statement ok
 SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'SQLite' ELSE 'DuckDB' END FROM pragma_platform());
