@@ -1,6 +1,6 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "odbc_extension.hpp"
+#include "nanodbc_extension.hpp"
 #include "duckdb.hpp"
 #include "odbc_scanner.hpp"
 
@@ -24,7 +24,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 }
 
-void OdbcExtension::Load(DuckDB &db) {
+void NanodbcExtension::Load(DuckDB &db) {
     LoadInternal(*db.instance);
 }
 
@@ -33,13 +33,17 @@ void OdbcExtension::Load(DuckDB &db) {
 extern "C" {
 
 // Critical: Make sure these function names exactly match what DuckDB expects
-DUCKDB_EXTENSION_API void odbc_init(duckdb::DatabaseInstance &db) {
+DUCKDB_EXTENSION_API void nanodbc_init(duckdb::DatabaseInstance &db) {
     duckdb::DuckDB db_wrapper(db);
-    db_wrapper.LoadExtension<duckdb::OdbcExtension>();
+    db_wrapper.LoadExtension<duckdb::NanodbcExtension>();
 }
 
-DUCKDB_EXTENSION_API const char *odbc_extension_version() {
+DUCKDB_EXTENSION_API const char *nanodbc_version() {
     return duckdb::DuckDB::LibraryVersion();
 }
 
 }
+
+#ifndef DUCKDB_EXTENSION_MAIN
+#error DUCKDB_EXTENSION_MAIN not defined
+#endif

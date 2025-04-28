@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 set(CMAKE_CXX_STANDARD 17)
 
 # Set extension name here
-set(TARGET_NAME odbc)
+set(TARGET_NAME nanodbc)
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
@@ -17,9 +17,6 @@ include_directories(src)
 # Set global visibility settings to ensure symbols are exported correctly
 set(CMAKE_CXX_VISIBILITY_PRESET default)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
-
-# Add explicit export definitions for odbc_init and odbc_version
-add_definitions(-DODBC_INIT_EXPORT)
 
 # Platform-specific settings
 if(APPLE)
@@ -92,8 +89,7 @@ set(EXTENSION_SOURCES
     src/odbc_statement.cpp
     src/odbc_utils.cpp
     src/odbc_scanner.cpp
-    src/odbc_extension.cpp
-    src/odbc_exports.cpp
+    src/nanodbc_extension.cpp
     src/odbc_parameters.cpp
     src/odbc_encoding.cpp
 )

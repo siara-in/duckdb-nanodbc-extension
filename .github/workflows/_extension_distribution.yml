@@ -160,6 +160,7 @@ jobs:
       GEN: ninja
       BUILD_SHELL: ${{ inputs.build_duckdb_shell && '1' || '0' }}
       DUCKDB_PLATFORM: ${{ matrix.duckdb_arch }}
+      NANODBC_ENVIRONMENT: ${{ matrix.duckdb_arch }}
 
     steps:
       - name: Export GitHub Actions cache environment variables
@@ -355,6 +356,8 @@ jobs:
       GEN: ninja
       BUILD_SHELL: ${{ inputs.build_duckdb_shell && '1' || '0' }}
       DUCKDB_PLATFORM: ${{ matrix.duckdb_arch }}
+      NANODBC_ENVIRONMENT: ${{ matrix.duckdb_arch }}
+
 
     steps:
       - name: Export GitHub Actions cache environment variables
@@ -502,6 +505,8 @@ jobs:
       CC: ${{ (matrix.duckdb_arch == 'windows_amd64_rtools' || matrix.duckdb_arch == 'windows_amd64_mingw') && 'gcc' || '' }}
       CXX: ${{ (matrix.duckdb_arch == 'windows_amd64_rtools' || matrix.duckdb_arch == 'windows_amd64_mingw') && 'g++' || '' }}
       GEN: ninja
+      NANODBC_ENVIRONMENT: ${{ matrix.duckdb_arch }}
+
 
     steps:
       - name: Export GitHub Actions cache environment variables

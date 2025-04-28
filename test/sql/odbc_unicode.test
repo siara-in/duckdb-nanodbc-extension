@@ -2,7 +2,9 @@
 # description: Test ODBC extension wstring/Unicode support
 # group: [odbc]
 
-require odbc
+require nanodbc
+
+require-env NANODBC_ENVIRONMENT
 
 statement ok
 SET variable odbc_connection = (SELECT CASE platform WHEN 'osx_arm64' THEN 'Driver=SQLite Driver;Database=__TEST_DIR__/unicode_test.db' ELSE 'Driver=DuckDB Driver;Database=__TEST_DIR__/unicode_test.db' END FROM pragma_platform());

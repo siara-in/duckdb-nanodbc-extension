@@ -3,7 +3,9 @@
 # group: [odbc]
 
 # Make sure the extension is loaded
-require odbc
+require nanodbc
+
+require-env NANODBC_ENVIRONMENT
 
 # Set up a connection variable that will work on different platforms
 statement ok

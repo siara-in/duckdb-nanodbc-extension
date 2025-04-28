@@ -16,8 +16,8 @@ The DuckDB ODBC extension allows DuckDB to seamlessly connect to any database sy
 ## Installation
 
 ```sql
-INSTALL odbc FROM community;
-LOAD odbc;
+INSTALL nanodbc FROM community;
+LOAD nanodbc;
 ```
 
 ## Usage Examples
