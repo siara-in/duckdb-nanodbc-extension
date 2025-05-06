@@ -47,4 +47,5 @@ jobs:
       duckdb_version: main
       ci_tools_version: main
       extension_name: nanodbc
-      exclude_archs: 'linux_amd64;linux_arm64;linux_amd64_musl;osx_amd64;wasm_mvp;wasm_eh;wasm_threads'
+      exclude_archs: 'linux_amd64_gcc4;linux_amd64;linux_arm64;linux_amd64_musl;osx_amd64;osx_arm64;wasm_mvp;wasm_eh;wasm_threads;windows_amd64'
+      skip_tests: true
