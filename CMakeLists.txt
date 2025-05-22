@@ -7,6 +7,7 @@ set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
 set(NANODBC_ENABLE_UNICODE ON CACHE BOOL "Enable Unicode support in nanodbc")
+set(NANODBC_ODBC_VERSION 0x0351 CACHE STRING "ODBC version to use")
 
 project(${TARGET_NAME})
 
