@@ -21,7 +21,7 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
 # Platform-specific settings
 if(APPLE)
     # Support for Apple Silicon (ARM64)
-    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
+    # set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
 
     # Find iconv on macOS (it's part of the system but needs explicit linking)
     find_library(ICONV_LIBRARY NAMES iconv libiconv REQUIRED)
