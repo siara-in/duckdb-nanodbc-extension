@@ -163,6 +163,7 @@ idx_t OdbcStatement::GetColumnCount() {
         
         return result.columns();
     } catch (const nanodbc::database_error& e) {
+        printf("Exception: Column count\n");
         OdbcUtils::ThrowException("get column count", e);
         return 0; // Won't reach here due to exception
     }

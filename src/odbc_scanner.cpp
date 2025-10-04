@@ -219,6 +219,7 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
 
                 // Get column information
                 auto columnCount = stmt->GetColumnCount();
+                printf("Column count: %d\n", columnCount);
                 
                 if (columnCount == 0) {
                     // DDL statement - add success column
@@ -245,6 +246,7 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                 result->column_types = return_types;
                 
             } catch (const nanodbc::database_error& e) {
+                printf("Exception: query\n");
                 OdbcUtils::ThrowException("bind query function", e);
             }
             
