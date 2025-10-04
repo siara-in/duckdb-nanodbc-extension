@@ -124,6 +124,8 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
 
 // Attach function for creating database views
 void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output);
+
+void ConnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output);
 void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, DataChunk &output);
 
 // Function declarations for public API
