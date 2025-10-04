@@ -192,6 +192,7 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
             int conn_idx = -1;
             std::string conn_pfx = "conn_idx=";
             auto s = params.connection.GetConnectionString();
+            printf("sql: $s\n", result->sql.c_str());
             printf("cs: %s\n", s.c_str());
             if (!params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
                 is_already_connected = true;
