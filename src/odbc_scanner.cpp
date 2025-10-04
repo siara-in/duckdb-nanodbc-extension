@@ -74,7 +74,7 @@ TableFunction OdbcTableFunction::CreateConnectFunction() {
     // Setup binding function
     result.bind = [](ClientContext &context, TableFunctionBindInput &input,
                      vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
-        return BindOdbcFunction(context, input, return_types, names, OdbcOperation::ATTACH);
+        return BindOdbcFunction(context, input, return_types, names, OdbcOperation::CONNECT);
     };
     
     // Add named parameters
