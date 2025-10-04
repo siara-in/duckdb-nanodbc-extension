@@ -656,8 +656,8 @@ void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, Data
     bool is_already_connected = false;
     int conn_idx = -1;
     std::string conn_pfx = "conn_idx=";
-    auto s = exec_data.connection_params.connection.GetConnectionString();
-    if (!exec_data.connection_params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
+    auto s = exec_data.connection_params.GetConnectionString();
+    if (!exec_data.connection_params.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
         is_already_connected = true;
         std::string numberPart = s.substr(conn_pfx.size());
         conn_idx = std::stoi(numberPart);
