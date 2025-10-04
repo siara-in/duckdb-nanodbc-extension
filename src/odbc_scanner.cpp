@@ -405,7 +405,7 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
             switch (out_vec.GetType().id()) {
                 case LogicalTypeId::VARCHAR: {
                     std::string str_val = state.statement->GetString(col_idx);
-                    print("%s, ", str_val.c_str());
+                    printf("%s, ", str_val.c_str());
                     // Apply encoding conversion if needed
                     if (OdbcEncoding::NeedsConversion(bind_data.options.encoding)) {
                         str_val = OdbcEncoding::ConvertToUTF8(str_val, bind_data.options.encoding);
