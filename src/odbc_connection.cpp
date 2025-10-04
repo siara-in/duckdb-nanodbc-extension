@@ -55,7 +55,7 @@ OdbcConnection::~OdbcConnection() {
     Disconnect();
 }
 
-OdbcConnection::Disconnect() {
+void OdbcConnection::Disconnect() {
     // Close connection if open
     if (IsOpen()) {
         try {
