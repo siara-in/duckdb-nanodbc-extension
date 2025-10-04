@@ -315,8 +315,29 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
     result->column_ids = input.column_ids;
     
     try {
+        bool is_already_connected = false;
+        int conn_idx = -1;
+        std::string conn_pfx = "conn_idx=";
+        auto s = bind_data.connection_params.GetConnectionString();
+        if (!bind_data.connection_params.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
+            is_already_connected = true;
+            std::string numberPart = s.substr(conn_pfx.size());
+            conn_idx = std::stoi(numberPart);
+            printf("ci: %d, sz: %zu\n", conn_idx, odbc_connections.size());
+            if (conn_idx >= odbc_connections.size()) {
+                is_already_connected = false;
+            }
+        }
+
         // Create connection
-        result->connection = OdbcConnection::Connect(bind_data.connection_params);
+        if (is_already_connected) {
+            result->connection = odbc_connections[conn_idx];
+            printf("Already connected\n");
+        } else {
+            printf("Not connected\n");
+            result->connection = OdbcConnection::Connect(bind_data.connection_params);
+            printf("Connected now\n");
+        }
         
         // Special handling for DDL statements
         if (bind_data.column_names.size() == 1 && bind_data.column_names[0] == "Success") {
