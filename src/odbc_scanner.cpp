@@ -69,7 +69,7 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
 static std::vector<std::unique_ptr<OdbcConnection>> odbc_connections;
 
 TableFunction OdbcTableFunction::CreateConnectFunction() {
-    TableFunction result("odbc_connect", {}, AttachOdbcDatabase);
+    TableFunction result("odbc_connect", {}, ConnectOdbcDatabase);
     
     // Setup binding function
     result.bind = [](ClientContext &context, TableFunctionBindInput &input,
