@@ -209,9 +209,12 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                 unique_ptr<OdbcStatement> stmt;
                 if (is_already_connected) {
                     stmt = odbc_connections[conn_idx]->Prepare(result->sql);
+                    printf("Already connected\n");
                 } else {
+                    printf("Not connected\n");
                     db = OdbcConnection::Connect(result->connection_params);
                     stmt = db->Prepare(result->sql);
+                    printf("Statement prepared\n");
                 }
 
                 // Get column information
