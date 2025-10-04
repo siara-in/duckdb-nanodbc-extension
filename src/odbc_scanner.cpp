@@ -66,6 +66,8 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
     return result;
 }
 
+static std::vector<std::unique_ptr<OdbcConnection>> odbc_connections;
+
 TableFunction OdbcTableFunction::CreateConnectFunction() {
     TableFunction result("odbc_connect", {}, AttachOdbcDatabase);
     
@@ -189,9 +191,10 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
             bool is_already_connected = false;
             int conn_idx = -1;
             std::string conn_pfx = "conn_idx=";
-            if (!params.connection->is_dsn && params.connection_string.rfind(conn_pfx, 0) == 0) {
+            auto s = params.GetConnectionString();
+            if (!params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
                 is_already_connected = true;
-                std::string numberPart = s.substr(prefix.size());
+                std::string numberPart = s.substr(conn_pfx.size());
                 conn_idx = std::stoi(numberPart);
                 if (conn_idx >= odbc_connections.size()) {
                     is_already_connected = false;
@@ -596,8 +599,6 @@ void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataCh
 //------------------------------------------------------------------------------
 // Connect Function
 //------------------------------------------------------------------------------
-
-static std::vector<std::unique_ptr<OdbcConnection>> odbc_connections;
 
 void ConnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
     auto &attach_data = data.bind_data->CastNoConst<OdbcAttachFunctionData>();

@@ -44,7 +44,7 @@ struct OdbcAttachParameters {
 // Disconnect-specific parameters
 struct OdbcDisconnectParameters {
     int conn_idx;
-}
+};
 
 // Parameter parsing utility class
 class OdbcParameterParser {

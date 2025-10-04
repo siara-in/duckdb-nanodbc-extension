@@ -32,6 +32,7 @@ public:
     std::string GetConnectionString() const;
     
     // Getters
+    const bool IsDsn() const { return is_dsn; }
     const std::string& GetDsn() const { return dsn; }
     const std::string& GetUsername() const { return username; }
     const std::string& GetPassword() const { return password; }
