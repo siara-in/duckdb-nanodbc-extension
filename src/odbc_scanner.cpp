@@ -191,7 +191,7 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
             bool is_already_connected = false;
             int conn_idx = -1;
             std::string conn_pfx = "conn_idx=";
-            auto s = params.GetConnectionString();
+            auto s = params.connection.GetConnectionString();
             if (!params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
                 is_already_connected = true;
                 std::string numberPart = s.substr(conn_pfx.size());
@@ -653,11 +653,28 @@ void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, Data
         output.SetCardinality(0);
         return;
     }
-    
+    bool is_already_connected = false;
+    int conn_idx = -1;
+    std::string conn_pfx = "conn_idx=";
+    auto s = params.connection.GetConnectionString();
+    if (!params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
+        is_already_connected = true;
+        std::string numberPart = s.substr(conn_pfx.size());
+        conn_idx = std::stoi(numberPart);
+        if (conn_idx >= odbc_connections.size()) {
+            is_already_connected = false;
+        }
+    }
+    // Connect to data source and get schema
     try {
-        auto db = OdbcConnection::Connect(exec_data.connection_params);
-        db->Execute(exec_data.sql);
-        
+        unique_ptr<OdbcConnection> db;
+        if (is_already_connected) {
+            odbc_connections[conn_idx]->Execute(exec_data.sql);
+        } else {
+            db = OdbcConnection::Connect(result->connection_params);
+            db->Execute(exec_data.sql);
+        }
+
         output.SetCardinality(1);
         FlatVector::GetData<bool>(output.data[0])[0] = true;
         
