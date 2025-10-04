@@ -66,7 +66,7 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
     return result;
 }
 
-static std::vector<std::unique_ptr<OdbcConnection>> odbc_connections;
+static std::vector<std::shared_ptr<OdbcConnection>> odbc_connections;
 
 TableFunction OdbcTableFunction::CreateConnectFunction() {
     TableFunction result("odbc_connect", {}, ConnectOdbcDatabase);
