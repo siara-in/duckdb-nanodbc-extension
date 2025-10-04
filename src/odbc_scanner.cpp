@@ -626,11 +626,24 @@ void ConnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataC
     }
     
     try {
-        auto db = OdbcConnection::Connect(attach_data.connection_params);
-        odbc_connections.push_back(std::move(db));
-        // Set output
+        int conn_idx = -1;
+        std::string conn_pfx = "disconnect_idx=";
+        auto s = attach_data.connection_params.GetConnectionString();
         output.SetCardinality(1);
-        output.SetValue(0, 0, Value::INTEGER(odbc_connections.size() - 1));
+        if (!attach_data.connection_params.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
+            std::string numberPart = s.substr(conn_pfx.size());
+            conn_idx = std::stoi(numberPart);
+            if (conn_idx < odbc_connections.size()) {
+                odbc_connections[conn_idx].Disconnect();
+                output.SetValue(0, 0, Value::INTEGER(1));
+            } else {
+                output.SetValue(0, 0, Value::INTEGER(0));
+            }
+        } else {
+            auto db = OdbcConnection::Connect(attach_data.connection_params);
+            odbc_connections.push_back(std::move(db));
+            output.SetValue(0, 0, Value::INTEGER(odbc_connections.size() - 1));
+        }
         
         attach_data.finished = true;
         
@@ -638,26 +651,6 @@ void ConnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataC
         OdbcUtils::ThrowException("connect database", e);
     }
 }
-
-//------------------------------------------------------------------------------
-// Disconnect Function
-//------------------------------------------------------------------------------
-
-// void DisconnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
-//     auto &attach_data = data.bind_data->CastNoConst<OdbcAttachFunctionData>();
-//     try {
-//         auto db = OdbcConnection::Connect(attach_data.connection_params);
-//         odbc_connections.push_back(std::move(db));
-//         // Set output
-//         output.SetCardinality(1);
-//         output.SetValue(0, 0, Value::INTEGER(odbc_connections.size() - 1));
-        
-//         attach_data.finished = true;
-        
-//     } catch (const nanodbc::database_error& e) {
-//         OdbcUtils::ThrowException("disconnect database", e);
-//     }
-// }
 
 //------------------------------------------------------------------------------
 // Exec Function
@@ -725,9 +718,5 @@ TableFunction OdbcExecFunction() {
 TableFunction OdbcConnectFunction() {
     return OdbcTableFunction::CreateConnectFunction();
 }
-
-// TableFunction OdbcDisconnectFunction() {
-//     return OdbcTableFunction::CreateDisconnectFunction();
-// }
 
 } // namespace duckdb

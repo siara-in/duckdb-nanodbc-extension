@@ -17,7 +17,6 @@ enum class OdbcOperation {
     QUERY,   // Execute custom query
     EXEC,    // Execute statement without results
     CONNECT, // Conect using a connection string
-    DISCONNECT // Disconnect from connection
 };
 
 /**
@@ -101,7 +100,6 @@ public:
     static TableFunction CreateQueryFunction();
     static TableFunction CreateExecFunction();
     static TableFunction CreateConnectFunction();
-    // static TableFunction CreateDisconnectFunction();
 };
 
 // Main binding function for all ODBC operations
@@ -134,6 +132,5 @@ TableFunction OdbcAttachFunction();
 TableFunction OdbcQueryFunction();
 TableFunction OdbcExecFunction();
 TableFunction OdbcConnectFunction();
-//TableFunction OdbcDisconnectFunction();
 
 } // namespace duckdb

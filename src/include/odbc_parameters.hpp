@@ -41,11 +41,6 @@ struct OdbcAttachParameters {
     OdbcOptions options;
 };
 
-// Disconnect-specific parameters
-struct OdbcDisconnectParameters {
-    int conn_idx;
-};
-
 // Parameter parsing utility class
 class OdbcParameterParser {
 public:
@@ -66,9 +61,6 @@ public:
     
     // Parse attach-specific parameters
     static OdbcAttachParameters ParseAttachParameters(const TableFunctionBindInput& input);
-
-    // Parse disconnect-specific parameters
-    // static OdbcDisconnectParameters ParseDisconnectParameters(const TableFunctionBindInput& input);
 
 private:
     // Helper to get a string parameter with error checking
