@@ -79,7 +79,10 @@ public:
     
     // Check if the connection is open
     bool IsOpen() const;
-    
+
+    // Disconnect
+    void Disconnect();
+
     // Get tables from the connection
     std::vector<std::string> GetTables();
     std::vector<std::string> GetViews();

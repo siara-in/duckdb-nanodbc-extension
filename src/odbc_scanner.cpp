@@ -66,6 +66,28 @@ TableFunction OdbcTableFunction::CreateAttachFunction() {
     return result;
 }
 
+TableFunction OdbcTableFunction::CreateConnectFunction() {
+    TableFunction result("odbc_connect", {}, AttachOdbcDatabase);
+    
+    // Setup binding function
+    result.bind = [](ClientContext &context, TableFunctionBindInput &input,
+                     vector<LogicalType> &return_types, vector<string> &names) -> unique_ptr<FunctionData> {
+        return BindOdbcFunction(context, input, return_types, names, OdbcOperation::ATTACH);
+    };
+    
+    // Add named parameters
+    result.named_parameters["connection"] = LogicalType(LogicalTypeId::VARCHAR);
+    result.named_parameters["username"] = LogicalType(LogicalTypeId::VARCHAR);
+    result.named_parameters["password"] = LogicalType(LogicalTypeId::VARCHAR);
+    result.named_parameters["all_varchar"] = LogicalType(LogicalTypeId::BOOLEAN);
+    result.named_parameters["overwrite"] = LogicalType(LogicalTypeId::BOOLEAN);
+    result.named_parameters["encoding"] = LogicalType(LogicalTypeId::VARCHAR);
+    result.named_parameters["timeout"] = LogicalType(LogicalTypeId::INTEGER);
+    result.named_parameters["read_only"] = LogicalType(LogicalTypeId::BOOLEAN);
+    
+    return result;
+}
+
 TableFunction OdbcTableFunction::CreateQueryFunction() {
     TableFunction result("odbc_query", {}, ScanOdbcSource);
     
@@ -164,12 +186,28 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
             result->connection_params = params.connection;
             result->sql = params.query;
             result->options = params.options;
-            
+            bool is_already_connected = false;
+            int conn_idx = -1;
+            std::string conn_pfx = "conn_idx=";
+            if (!params.connection->is_dsn && params.connection_string.rfind(conn_pfx, 0) == 0) {
+                is_already_connected = true;
+                std::string numberPart = s.substr(prefix.size());
+                conn_idx = std::stoi(numberPart);
+                if (conn_idx >= odbc_connections.size()) {
+                    is_already_connected = false;
+                }
+            }
             // Connect to data source and get schema
             try {
-                auto db = OdbcConnection::Connect(result->connection_params);
-                auto stmt = db->Prepare(result->sql);
-                
+                unique_ptr<OdbcConnection> db;
+                unique_ptr<OdbcStatement> stmt;
+                if (is_already_connected) {
+                    stmt = odbc_connections[conn_idx]->Prepare(result->sql);
+                } else {
+                    db = OdbcConnection::Connect(result->connection_params);
+                    stmt = db->Prepare(result->sql);
+                }
+
                 // Get column information
                 auto columnCount = stmt->GetColumnCount();
                 
@@ -230,7 +268,20 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
             
             return std::move(result);
         }
-        
+
+        case OdbcOperation::CONNECT: {
+            auto params = OdbcParameterParser::ParseAttachParameters(input);
+            auto result = make_uniq<OdbcAttachFunctionData>();
+            result->connection_params = params.connection;
+            result->options = params.options;
+            
+            // Set up return types (single integer column)
+            return_types.emplace_back(LogicalTypeId::INTEGER);
+            names.emplace_back("Success");
+            
+            return std::move(result);
+        }
+
         default:
             throw NotImplementedException("Unsupported ODBC operation");
     }
@@ -543,6 +594,54 @@ void AttachOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataCh
 }
 
 //------------------------------------------------------------------------------
+// Connect Function
+//------------------------------------------------------------------------------
+
+static std::vector<std::unique_ptr<OdbcConnection>> odbc_connections;
+
+void ConnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+    auto &attach_data = data.bind_data->CastNoConst<OdbcAttachFunctionData>();
+
+    if (attach_data.finished) {
+        output.SetCardinality(0);
+        return;
+    }
+    
+    try {
+        auto db = OdbcConnection::Connect(attach_data.connection_params);
+        odbc_connections.push_back(std::move(db));
+        // Set output
+        output.SetCardinality(1);
+        output.SetValue(0, 0, Value::INTEGER(odbc_connections.size() - 1));
+        
+        attach_data.finished = true;
+        
+    } catch (const nanodbc::database_error& e) {
+        OdbcUtils::ThrowException("connect database", e);
+    }
+}
+
+//------------------------------------------------------------------------------
+// Disconnect Function
+//------------------------------------------------------------------------------
+
+// void DisconnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+//     auto &attach_data = data.bind_data->CastNoConst<OdbcAttachFunctionData>();
+//     try {
+//         auto db = OdbcConnection::Connect(attach_data.connection_params);
+//         odbc_connections.push_back(std::move(db));
+//         // Set output
+//         output.SetCardinality(1);
+//         output.SetValue(0, 0, Value::INTEGER(odbc_connections.size() - 1));
+        
+//         attach_data.finished = true;
+        
+//     } catch (const nanodbc::database_error& e) {
+//         OdbcUtils::ThrowException("disconnect database", e);
+//     }
+// }
+
+//------------------------------------------------------------------------------
 // Exec Function
 //------------------------------------------------------------------------------
 
@@ -587,5 +686,13 @@ TableFunction OdbcQueryFunction() {
 TableFunction OdbcExecFunction() {
     return OdbcTableFunction::CreateExecFunction();
 }
+
+TableFunction OdbcConnectFunction() {
+    return OdbcTableFunction::CreateConnectFunction();
+}
+
+// TableFunction OdbcDisconnectFunction() {
+//     return OdbcTableFunction::CreateDisconnectFunction();
+// }
 
 } // namespace duckdb

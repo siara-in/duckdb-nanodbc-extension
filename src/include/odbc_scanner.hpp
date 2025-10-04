@@ -15,7 +15,9 @@ enum class OdbcOperation {
     SCAN,    // Read a table
     ATTACH,  // Attach database
     QUERY,   // Execute custom query
-    EXEC     // Execute statement without results
+    EXEC,    // Execute statement without results
+    CONNECT, // Conect using a connection string
+    DISCONNECT // Disconnect from connection
 };
 
 /**
@@ -28,6 +30,7 @@ struct OdbcScannerState : public TableFunctionData {
     // Operation details
     std::string table_name;
     std::string sql;
+    int conn_idx;
     
     // Schema information
     std::vector<std::string> column_names;
@@ -97,6 +100,8 @@ public:
     static TableFunction CreateAttachFunction();
     static TableFunction CreateQueryFunction();
     static TableFunction CreateExecFunction();
+    static TableFunction CreateConnectFunction();
+    // static TableFunction CreateDisconnectFunction();
 };
 
 // Main binding function for all ODBC operations
@@ -126,5 +131,7 @@ TableFunction OdbcScanFunction();
 TableFunction OdbcAttachFunction();
 TableFunction OdbcQueryFunction();
 TableFunction OdbcExecFunction();
+TableFunction OdbcConnectFunction();
+//TableFunction OdbcDisconnectFunction();
 
 } // namespace duckdb

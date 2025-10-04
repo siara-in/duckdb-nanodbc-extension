@@ -52,6 +52,10 @@ std::string ConnectionParams::GetConnectionString() const {
 //---------------------------------------------------------------------------
 
 OdbcConnection::~OdbcConnection() {
+    Disconnect();
+}
+
+OdbcConnection::Disconnect() {
     // Close connection if open
     if (IsOpen()) {
         try {
@@ -68,15 +72,7 @@ OdbcConnection::OdbcConnection(OdbcConnection &&other) noexcept {
 
 OdbcConnection &OdbcConnection::operator=(OdbcConnection &&other) noexcept {
     if (this != &other) {
-        // Close current connection if open
-        if (IsOpen()) {
-            try {
-                connection.disconnect();
-            } catch (...) {
-                // Ignore exceptions during disconnect
-            }
-        }
-        
+        Disconnect();        
         // Move the connection
         connection = std::move(other.connection);
     }

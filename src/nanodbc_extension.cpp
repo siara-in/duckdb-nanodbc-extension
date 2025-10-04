@@ -16,6 +16,8 @@ static void RegisterOdbcFunctions(DatabaseInstance &instance) {
     ExtensionUtil::RegisterFunction(instance, OdbcAttachFunction());
     ExtensionUtil::RegisterFunction(instance, OdbcQueryFunction());
     ExtensionUtil::RegisterFunction(instance, OdbcExecFunction());
+    ExtensionUtil::RegisterFunction(instance, OdbcConnectFunction());
+    //ExtensionUtil::RegisterFunction(instance, OdbcDisconnectFunction());
 }
 
 static void LoadInternal(DatabaseInstance &instance) {
