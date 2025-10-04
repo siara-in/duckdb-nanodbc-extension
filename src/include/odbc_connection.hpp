@@ -82,7 +82,7 @@ public:
     bool IsOpen() const;
 
     // Disconnect
-    void Disconnect();
+    // void Disconnect();
 
     // Get tables from the connection
     std::vector<std::string> GetTables();
