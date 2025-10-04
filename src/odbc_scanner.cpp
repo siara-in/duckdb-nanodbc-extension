@@ -656,8 +656,8 @@ void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, Data
     bool is_already_connected = false;
     int conn_idx = -1;
     std::string conn_pfx = "conn_idx=";
-    auto s = params.connection.GetConnectionString();
-    if (!params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
+    auto s = exec_data.connection_params.connection.GetConnectionString();
+    if (!exec_data.connection_params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
         is_already_connected = true;
         std::string numberPart = s.substr(conn_pfx.size());
         conn_idx = std::stoi(numberPart);
@@ -671,7 +671,7 @@ void ExecuteOdbcStatement(ClientContext &context, TableFunctionInput &data, Data
         if (is_already_connected) {
             odbc_connections[conn_idx]->Execute(exec_data.sql);
         } else {
-            db = OdbcConnection::Connect(result->connection_params);
+            db = OdbcConnection::Connect(exec_data.connection_params);
             db->Execute(exec_data.sql);
         }
 
