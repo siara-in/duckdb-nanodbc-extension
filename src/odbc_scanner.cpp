@@ -192,13 +192,10 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
             int conn_idx = -1;
             std::string conn_pfx = "conn_idx=";
             auto s = params.connection.GetConnectionString();
-            printf("sql: %s\n", result->sql.c_str());
-            printf("cs: %s\n", s.c_str());
             if (!params.connection.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
                 is_already_connected = true;
                 std::string numberPart = s.substr(conn_pfx.size());
                 conn_idx = std::stoi(numberPart);
-                printf("ci: %d, sz: %zu\n", conn_idx, odbc_connections.size());
                 if (conn_idx >= odbc_connections.size()) {
                     is_already_connected = false;
                 }
@@ -209,17 +206,13 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                 unique_ptr<OdbcStatement> stmt;
                 if (is_already_connected) {
                     stmt = odbc_connections[conn_idx]->Prepare(result->sql);
-                    printf("Already connected\n");
                 } else {
-                    printf("Not connected\n");
                     db = OdbcConnection::Connect(result->connection_params);
                     stmt = db->Prepare(result->sql);
-                    printf("Statement prepared\n");
                 }
 
                 // Get column information
                 auto columnCount = stmt->GetColumnCount();
-                printf("Column count: %d\n", columnCount);
                 
                 if (columnCount == 0) {
                     // DDL statement - add success column
@@ -246,7 +239,6 @@ unique_ptr<FunctionData> BindOdbcFunction(ClientContext &context, TableFunctionB
                 result->column_types = return_types;
                 
             } catch (const nanodbc::database_error& e) {
-                printf("Exception: query\n");
                 OdbcUtils::ThrowException("bind query function", e);
             }
             
@@ -323,7 +315,6 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
             is_already_connected = true;
             std::string numberPart = s.substr(conn_pfx.size());
             conn_idx = std::stoi(numberPart);
-            printf("ci: %d, sz: %zu\n", conn_idx, odbc_connections.size());
             if (conn_idx >= odbc_connections.size()) {
                 is_already_connected = false;
             }
@@ -332,11 +323,8 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
         // Create connection
         if (is_already_connected) {
             result->connection = odbc_connections[conn_idx];
-            printf("Already connected\n");
         } else {
-            printf("Not connected\n");
             result->connection = OdbcConnection::Connect(bind_data.connection_params);
-            printf("Connected now\n");
         }
         
         // Special handling for DDL statements
@@ -381,7 +369,6 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
 //------------------------------------------------------------------------------
 
 void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
-    printf("ScanOdbcSource\n");
     auto &state = data.local_state->Cast<OdbcLocalScanState>();
     auto &bind_data = data.bind_data->Cast<OdbcScannerState>();
     
@@ -390,7 +377,6 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
         return;
     }
 
-    printf("Output colcount: %d\n", output.ColumnCount());
     // Handle DDL statements
     if (output.ColumnCount() == 1 && 
         bind_data.column_names.size() == 1 && 
@@ -405,7 +391,6 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
     // Fetch rows and populate the DataChunk
     idx_t out_idx = 0;
     while (out_idx < STANDARD_VECTOR_SIZE) {
-        printf("Scan: %d\n", state.scan_count);
         if (!state.statement->Step()) {
             state.done = true;
             break;
@@ -426,7 +411,6 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
             switch (out_vec.GetType().id()) {
                 case LogicalTypeId::VARCHAR: {
                     std::string str_val = state.statement->GetString(col_idx);
-                    printf("%s, ", str_val.c_str());
                     // Apply encoding conversion if needed
                     if (OdbcEncoding::NeedsConversion(bind_data.options.encoding)) {
                         str_val = OdbcEncoding::ConvertToUTF8(str_val, bind_data.options.encoding);
@@ -535,7 +519,6 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
                     throw BinderException("Unsupported ODBC to DuckDB type conversion: " + 
                                        out_vec.GetType().ToString());
             }
-            printf("\n");
         }
         
         out_idx++;
