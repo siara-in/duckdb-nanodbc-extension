@@ -634,7 +634,7 @@ void ConnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataC
             std::string numberPart = s.substr(conn_pfx.size());
             conn_idx = std::stoi(numberPart);
             if (conn_idx < odbc_connections.size()) {
-                odbc_connections[conn_idx].Disconnect();
+                odbc_connections[conn_idx]->Disconnect();
                 output.SetValue(0, 0, Value::INTEGER(1));
             } else {
                 output.SetValue(0, 0, Value::INTEGER(0));
