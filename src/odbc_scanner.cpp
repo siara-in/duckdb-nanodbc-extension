@@ -360,6 +360,7 @@ unique_ptr<LocalTableFunctionState> InitOdbcLocalState(ExecutionContext &context
 //------------------------------------------------------------------------------
 
 void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+    printf("ScanOdbcSource\n");
     auto &state = data.local_state->Cast<OdbcLocalScanState>();
     auto &bind_data = data.bind_data->Cast<OdbcScannerState>();
     
@@ -368,6 +369,7 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
         return;
     }
 
+    printf("Output colcount: %d\n", output.ColumnCount());
     // Handle DDL statements
     if (output.ColumnCount() == 1 && 
         bind_data.column_names.size() == 1 && 
@@ -382,6 +384,7 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
     // Fetch rows and populate the DataChunk
     idx_t out_idx = 0;
     while (out_idx < STANDARD_VECTOR_SIZE) {
+        printf("Scan: %d\n", state.scan_count);
         if (!state.statement->Step()) {
             state.done = true;
             break;
@@ -402,6 +405,7 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
             switch (out_vec.GetType().id()) {
                 case LogicalTypeId::VARCHAR: {
                     std::string str_val = state.statement->GetString(col_idx);
+                    print("%s, ", str_val.c_str());
                     // Apply encoding conversion if needed
                     if (OdbcEncoding::NeedsConversion(bind_data.options.encoding)) {
                         str_val = OdbcEncoding::ConvertToUTF8(str_val, bind_data.options.encoding);
@@ -510,6 +514,7 @@ void ScanOdbcSource(ClientContext &context, TableFunctionInput &data, DataChunk 
                     throw BinderException("Unsupported ODBC to DuckDB type conversion: " + 
                                        out_vec.GetType().ToString());
             }
+            printf("\n");
         }
         
         out_idx++;
