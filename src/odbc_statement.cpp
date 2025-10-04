@@ -150,6 +150,7 @@ idx_t OdbcStatement::GetColumnCount() {
     if (!IsOpen()) {
         throw BinderException("Statement is not open");
     }
+    printf("GetColumnCount: %d\n", executed);
     
     try {
         if (!executed) {
@@ -157,6 +158,7 @@ idx_t OdbcStatement::GetColumnCount() {
             result = stmt.execute();
             executed = true;
             has_result = true;
+            printf("executed: %d\n", executed);
         }
         
         return result.columns();
