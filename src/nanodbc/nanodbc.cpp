@@ -4337,8 +4337,11 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 // SQL_NO_DATA or SQL_SUCCESS_WITH_INFO followed by SQL_SUCCESS.
             } while (rc == SQL_SUCCESS_WITH_INFO);
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA) {
+                for (char16_t c : out) {
+                    std::wcout << static_cast<wchar_t>(c);
+                }
+                std::wcout << L"/" << column << std::endl;
                 convert(std::move(out), result);
-                std::cout << result << "/" << column << std::endl;
             } else if (!success(rc))
                 NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
         }
@@ -4396,8 +4399,11 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 // SQL_NO_DATA or SQL_SUCCESS_WITH_INFO followed by SQL_SUCCESS.
             } while (rc == SQL_SUCCESS_WITH_INFO);
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA) {
+                for (char16_t c : out) {
+                    std::wcout << static_cast<wchar_t>(c);
+                }
+                std::wcout << L"/" << column << std::endl;
                 convert(std::move(out), result);
-                std::cout << result << "/" << column << std::endl;
             } else if (!success(rc))
                 NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
         }
