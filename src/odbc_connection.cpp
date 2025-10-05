@@ -121,7 +121,7 @@ unique_ptr<OdbcConnection> OdbcConnection::Connect(const ConnectionParams& param
 }
 
 unique_ptr<OdbcStatement> OdbcConnection::Prepare(const std::string &query) {
-    printf("is_mysql: %d", is_mssql());
+    printf("is_mysql: %d\n", connection.is_mssql());
     if (!IsOpen()) {
         throw BinderException("Cannot prepare statement: connection is closed");
     }
