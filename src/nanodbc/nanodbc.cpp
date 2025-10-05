@@ -4383,6 +4383,7 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 convert(std::move(out), result);
             else if (!success(rc)) {
                 out.append(col.name_);
+                convert(std::move(out), result);
                 //NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
             }
         }
