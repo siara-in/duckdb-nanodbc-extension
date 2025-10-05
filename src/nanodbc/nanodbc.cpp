@@ -4123,7 +4123,7 @@ private:
         {
             bound_column& col = bound_columns_[i];
             col.cbdata_ = new null_type[static_cast<size_t>(rowset_size_)];
-            if (col.blob_)
+            if (col.blob_ || is_db_mssql)
             {
                 unbind_column(col);
             }
