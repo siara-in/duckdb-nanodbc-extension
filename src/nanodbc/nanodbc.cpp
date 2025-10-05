@@ -4117,7 +4117,7 @@ private:
             }
         }
 
-        bool is_db_mssql = _stmt.connection().is_mssql();
+        bool is_db_mssql = stmt_.connection().is_mssql();
 
         for (SQLSMALLINT i = 0; i < n_columns; ++i)
         {
