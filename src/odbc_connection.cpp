@@ -121,7 +121,6 @@ unique_ptr<OdbcConnection> OdbcConnection::Connect(const ConnectionParams& param
 }
 
 unique_ptr<OdbcStatement> OdbcConnection::Prepare(const std::string &query) {
-    printf("Prepare: %s\n", query.c_str());
     if (!IsOpen()) {
         throw BinderException("Cannot prepare statement: connection is closed");
     }

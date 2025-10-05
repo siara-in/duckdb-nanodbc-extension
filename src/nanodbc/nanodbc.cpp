@@ -4000,6 +4000,8 @@ private:
         stmt_.disable_async();
 #endif
 
+        bool is_db_mssql = stmt_.connection().is_mssql();
+
         for (SQLSMALLINT i = 0; i < n_columns; ++i)
         {
             NANODBC_CALL_RC(
@@ -4071,7 +4073,7 @@ private:
             case SQL_VARCHAR:
                 col.ctype_ = sql_ctype<std::string>::value;
                 col.clen_ = NBYTES(col.sqlsize_, SQLCHAR);
-                if (col.sqlsize_ == 0)
+                if (col.sqlsize_ == 0 || is_db_mssql)
                 {
                     col.clen_ = 0;
                     col.blob_ = true;
@@ -4082,7 +4084,7 @@ private:
             case SQL_SS_XML:
                 col.ctype_ = sql_ctype<wide_string>::value;
                 col.clen_ = NBYTES(col.sqlsize_, SQLWCHAR);
-                if (col.sqlsize_ == 0)
+                if (col.sqlsize_ == 0 || is_db_mssql)
                 {
                     col.clen_ = 0;
                     col.blob_ = true;
@@ -4117,13 +4119,11 @@ private:
             }
         }
 
-        bool is_db_mssql = stmt_.connection().is_mssql();
-
         for (SQLSMALLINT i = 0; i < n_columns; ++i)
         {
             bound_column& col = bound_columns_[i];
             col.cbdata_ = new null_type[static_cast<size_t>(rowset_size_)];
-            if (col.blob_ || is_db_mssql)
+            if (col.blob_)
             {
                 unbind_column(col);
             }
