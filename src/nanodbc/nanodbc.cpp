@@ -4282,9 +4282,9 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
     bool is_db_mssql = stmt_.connection().is_mssql();
     SQLSMALLINT ctype = col.ctype_;
     if (is_db_mssql) {
-        bool isBinary = (type == SQL_BINARY ||
-                type == SQL_VARBINARY ||
-                type == SQL_LONGVARBINARY);
+        bool isBinary = (ctype == SQL_BINARY ||
+                ctype == SQL_VARBINARY ||
+                ctype == SQL_LONGVARBINARY);
         ctype = (isBinary ? SQL_C_BINARY : SQL_C_WCHAR);
     }
     switch (ctype)
