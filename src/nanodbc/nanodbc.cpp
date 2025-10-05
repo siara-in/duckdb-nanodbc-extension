@@ -4383,7 +4383,7 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 convert(std::move(out), result);
             else if (!success(rc)) {
                 std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> conv;
-                out += conv.from_bytes(col.name_);
+                out.append(conv.from_bytes(col.name_));
                 convert(std::move(out), result);
                 //NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
             }
