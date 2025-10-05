@@ -5283,6 +5283,11 @@ string connection::dbms_name() const
     return impl_->dbms_name();
 }
 
+bool connection::is_mssql() const
+{
+    return impl_->is_mssql();
+}
+
 string connection::dbms_version() const
 {
     return impl_->dbms_version();
