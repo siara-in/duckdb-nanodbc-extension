@@ -1419,6 +1419,13 @@ template unsigned short connection::get_info(short info_type) const;
 template uint32_t connection::get_info(short info_type) const;
 template uint64_t connection::get_info(short info_type) const;
 
+inline bool connection::connection_impl::is_mssql() const
+{
+    const std::string name = dbms_name();
+    // SQL Server ODBC driver returns "Microsoft SQL Server"
+    return name.find("Microsoft SQL Server") != std::string::npos;
+}
+
 } // namespace nanodbc
 
 // clang-format off
@@ -4108,11 +4115,13 @@ private:
             }
         }
 
+        bool is_db_mssql = is_mssql();
+
         for (SQLSMALLINT i = 0; i < n_columns; ++i)
         {
             bound_column& col = bound_columns_[i];
             col.cbdata_ = new null_type[static_cast<size_t>(rowset_size_)];
-            if (col.blob_)
+            if (col.blob_ || is_db_mssql)
             {
                 unbind_column(col);
             }

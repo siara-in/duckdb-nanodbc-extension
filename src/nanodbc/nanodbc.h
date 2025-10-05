@@ -1656,6 +1656,9 @@ public:
     /// accesssed by the driver via the current connection.
     string dbms_name() const;
 
+    /// \brief Returns if the database is MS Sql or not
+    bool is_mssql() const; 
+
     /// \brief Returns version of the DBMS product.
     /// Returns the ODBC information type SQL_DBMS_VER of the DBMS product
     /// accesssed by the driver via the current connection.
