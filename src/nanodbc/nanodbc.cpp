@@ -99,6 +99,9 @@ struct is_optional<std::optional<T>> : std::true_type
 #endif
 
 // Driver specific SQL data type defines.
+#ifndef SQL_DB2_XML
+#define SQL_DB2_XML (-370)
+#endif
 // Microsoft has -150 thru -199 reserved for Microsoft SQL Server Native Client driver usage.
 // Originally, defined in sqlncli.h (old SQL Server Native Client driver)
 // and msodbcsql.h (new Microsoft ODBC Driver for SQL Server)
@@ -1798,7 +1801,7 @@ public:
         // so only raise the error if a non-default timeout was requested.
         try
         {
-            this->set_attribute(SQL_ATTR_QUERY_TIMEOUT, 0, &timeout);
+            this->set_attribute(SQL_ATTR_QUERY_TIMEOUT, 0, (void*)(std::intptr_t)timeout);
         }
         catch (...)
         {
@@ -4073,7 +4076,7 @@ private:
             case SQL_VARCHAR:
                 col.ctype_ = sql_ctype<std::string>::value;
                 col.clen_ = NBYTES(col.sqlsize_, SQLCHAR);
-                if (col.sqlsize_ == 0 || is_db_mssql)
+                if (col.sqlsize_ == 0)
                 {
                     col.clen_ = 0;
                     col.blob_ = true;
@@ -4084,7 +4087,7 @@ private:
             case SQL_SS_XML:
                 col.ctype_ = sql_ctype<wide_string>::value;
                 col.clen_ = NBYTES(col.sqlsize_, SQLWCHAR);
-                if (col.sqlsize_ == 0 || is_db_mssql)
+                if (col.sqlsize_ == 0)
                 {
                     col.clen_ = 0;
                     col.blob_ = true;
@@ -4108,6 +4111,7 @@ private:
             case SQL_VARBINARY:
             case SQL_LONGVARBINARY:
             case SQL_SS_UDT: // MSDN: Essentially, UDT is a varbinary type with additional metadata.
+            case SQL_DB2_XML:
                 col.ctype_ = SQL_C_BINARY;
                 col.blob_ = true;
                 col.clen_ = 0;
@@ -4123,7 +4127,7 @@ private:
         {
             bound_column& col = bound_columns_[i];
             col.cbdata_ = new null_type[static_cast<size_t>(rowset_size_)];
-            if (col.blob_)
+            if (col.blob_ || is_db_mssql)
             {
                 unbind_column(col);
             }
@@ -4275,7 +4279,15 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
     bound_column& col = bound_columns_[column];
     const SQLULEN column_size = col.sqlsize_;
 
-    switch (col.ctype_)
+    bool is_db_mssql = stmt_.connection().is_mssql();
+    SQLSMALLINT ctype = col.ctype_;
+    if (is_db_mssql) {
+        bool isBinary = (type == SQL_BINARY ||
+                type == SQL_VARBINARY ||
+                type == SQL_LONGVARBINARY);
+        ctype = (isBinary ? SQL_C_BINARY : SQL_C_WCHAR);
+    }
+    switch (ctype)
     {
     case SQL_C_CHAR:
     case SQL_C_BINARY:
@@ -4295,10 +4307,6 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
 #endif
 
             void* handle = native_statement_handle();
-
-            SQLFreeStmt(handle, SQL_UNBIND);
-            SQLFreeStmt(handle, SQL_RESET_PARAMS);
-
             do
             {
                 char buffer[1024] = {0};
@@ -4308,18 +4316,18 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                     rc,
                     handle,                                // StatementHandle
                     static_cast<SQLUSMALLINT>(column + 1), // Col_or_Param_Num
-                    col.ctype_,                            // TargetType
+                    ctype,                            // TargetType
                     buffer,                                // TargetValuePtr
                     buffer_size,                           // BufferLength
                     &ValueLenOrInd);                       // StrLen_or_IndPtr
                 if (ValueLenOrInd == SQL_NO_TOTAL)
-                    out.append(buffer, col.ctype_ == SQL_C_BINARY ? buffer_size : buffer_size - 1);
+                    out.append(buffer, ctype == SQL_C_BINARY ? buffer_size : buffer_size - 1);
                 else if (ValueLenOrInd > 0)
                     out.append(
                         buffer,
                         std::min<std::size_t>(
                             ValueLenOrInd,
-                            col.ctype_ == SQL_C_BINARY ? buffer_size : buffer_size - 1));
+                            ctype == SQL_C_BINARY ? buffer_size : buffer_size - 1));
                 else if (ValueLenOrInd == SQL_NULL_DATA)
                     col.cbdata_[static_cast<size_t>(rowset_position_)] = (SQLINTEGER)SQL_NULL_DATA;
                 // Sequence of successful calls is:
@@ -4327,12 +4335,8 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
             } while (rc == SQL_SUCCESS_WITH_INFO);
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA)
                 convert(std::move(out), result);
-            else if (!success(rc)) {
-                out.clear();
-                convert(std::move(out), result);
-                //printf("cnb: %s\n", col.name_.c_str());
-                //NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
-            }
+            else if (!success(rc))
+                NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
         }
         else
         { // bound and not blob
@@ -4360,10 +4364,6 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
 #endif
 
             void* handle = native_statement_handle();
-
-            SQLFreeStmt(handle, SQL_UNBIND);
-            SQLFreeStmt(handle, SQL_RESET_PARAMS);
-
             do
             {
                 wide_char_t buffer[512] = {0};
@@ -4373,7 +4373,7 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                     rc,
                     handle,                                // StatementHandle
                     static_cast<SQLUSMALLINT>(column + 1), // Col_or_Param_Num
-                    col.ctype_,                            // TargetType
+                    ctype,                            // TargetType
                     buffer,                                // TargetValuePtr
                     buffer_size,                           // BufferLength
                     &ValueLenOrInd);                       // StrLen_or_IndPtr
@@ -4393,12 +4393,8 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
             } while (rc == SQL_SUCCESS_WITH_INFO);
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA)
                 convert(std::move(out), result);
-            else if (!success(rc)) {
-                //printf("cnw: %s\n", col.name_.c_str());
-                out.clear();
-                convert(std::move(out), result);
-                //NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
-            }
+            else if (!success(rc))
+                NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
         }
         else
         { // bound and not blob
