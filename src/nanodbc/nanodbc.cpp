@@ -4323,8 +4323,10 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
             } while (rc == SQL_SUCCESS_WITH_INFO);
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA)
                 convert(std::move(out), result);
-            else if (!success(rc))
-                NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
+            else if (!success(rc)) {
+                convert(std::move(out), result);
+                //NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
+            }
         }
         else
         { // bound and not blob
