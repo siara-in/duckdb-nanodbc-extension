@@ -4326,7 +4326,7 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
             else if (!success(rc)) {
                 out.clear();
                 convert(std::move(out), result);
-                printf("cnb: %s\n", col.name_);
+                printf("cnb: %s\n", col.name_.c_str());
                 //NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
             }
         }
@@ -4386,7 +4386,7 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA)
                 convert(std::move(out), result);
             else if (!success(rc)) {
-                printf("cnw: %s\n", col.name_);
+                printf("cnw: %s\n", col.name_.c_str());
                 out.clear();
                 convert(std::move(out), result);
                 //NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
