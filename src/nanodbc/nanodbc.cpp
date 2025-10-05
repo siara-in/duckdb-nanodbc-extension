@@ -1306,6 +1306,8 @@ public:
     }
     string dbms_name() const;
 
+    bool is_mssql() const;
+
     string dbms_version() const;
 
     string driver_name() const;
