@@ -27,6 +27,9 @@
 #include <map>
 #include <type_traits>
 
+#include <iostream>
+#include <string>
+
 #ifndef __clang__
 #include <cstdint>
 #endif
@@ -4333,9 +4336,10 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 // Sequence of successful calls is:
                 // SQL_NO_DATA or SQL_SUCCESS_WITH_INFO followed by SQL_SUCCESS.
             } while (rc == SQL_SUCCESS_WITH_INFO);
-            if (rc == SQL_SUCCESS || rc == SQL_NO_DATA)
+            if (rc == SQL_SUCCESS || rc == SQL_NO_DATA) {
+                std::wcout << out << "/" << column << std::endl;
                 convert(std::move(out), result);
-            else if (!success(rc))
+            } else if (!success(rc))
                 NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
         }
         else
@@ -4391,9 +4395,10 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 // Sequence of successful calls is:
                 // SQL_NO_DATA or SQL_SUCCESS_WITH_INFO followed by SQL_SUCCESS.
             } while (rc == SQL_SUCCESS_WITH_INFO);
-            if (rc == SQL_SUCCESS || rc == SQL_NO_DATA)
+            if (rc == SQL_SUCCESS || rc == SQL_NO_DATA) {
+                std::wcout << out << "/" << column << std::endl;
                 convert(std::move(out), result);
-            else if (!success(rc))
+            } else if (!success(rc))
                 NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
         }
         else
