@@ -3438,7 +3438,7 @@ public:
         if (!success(rc))
             NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
 
-        //auto_bind_columns();
+        auto_bind_columns();
     }
 
     ~result_impl() noexcept { cleanup_bound_columns(); }
@@ -3737,7 +3737,7 @@ public:
             return false;
         if (!success(rc))
             NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
-        //auto_bind_columns();
+        auto_bind_columns();
         return true;
     }
 
@@ -4123,7 +4123,7 @@ private:
         {
             bound_column& col = bound_columns_[i];
             col.cbdata_ = new null_type[static_cast<size_t>(rowset_size_)];
-            if (col.blob_ || is_db_mssql)
+            if (col.blob_)
             {
                 unbind_column(col);
             }
@@ -4295,6 +4295,10 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
 #endif
 
             void* handle = native_statement_handle();
+
+            SQLFreeStmt(handle, SQL_UNBIND);
+            SQLFreeStmt(handle, SQL_RESET_PARAMS);
+
             do
             {
                 char buffer[1024] = {0};
@@ -4356,6 +4360,10 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
 #endif
 
             void* handle = native_statement_handle();
+
+            SQLFreeStmt(handle, SQL_UNBIND);
+            SQLFreeStmt(handle, SQL_RESET_PARAMS);
+
             do
             {
                 wide_char_t buffer[512] = {0};
