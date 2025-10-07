@@ -416,6 +416,23 @@ inline void convert(std::basic_string<T> const& in, std::basic_string<U>& out)
     convert(in.data(), in.size(), out);
 }
 
+template <class T>
+inline void convert(std::vector<uint8_t>& in, std::basic_string<T>& out)
+{
+    for (size_t i = 0; i < in.size(); i++) {
+        uint8_t b = in[i];
+        int c1 = b >> 4;
+        out.append(1, c1 > 9 ? 'A' + c1 - 10 : '0' + c1);
+        int c2 = b & 0x0F;
+        out.append(1, c2 > 9 ? 'A' + c2 - 10 : '0' + c2);
+    }
+}
+
+inline void append_vector_u8(std::vector<uint8_t>& in, char *buf, size_t len)
+{
+    for (size_t i = 0; i < len; i++) in.push_back(buf[i]);
+}
+
 // Attempts to get the most recent ODBC error as a string.
 // Always returns std::string, even in unicode mode.
 inline std::string
@@ -4298,7 +4315,7 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
         if (!is_bound(column))
         {
             // Input is always std::string, while output may be std::string or wide_string
-            std::string out;
+            std::vector<uint8_t> out;
             // The length of the data available to return, decreasing with subsequent SQLGetData
             // calls.
             // But, NOT the length of data returned into the buffer (apart from the final call).
@@ -4324,9 +4341,9 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                     buffer_size,                           // BufferLength
                     &ValueLenOrInd);                       // StrLen_or_IndPtr
                 if (ValueLenOrInd == SQL_NO_TOTAL)
-                    out.append(buffer, ctype == SQL_C_BINARY ? buffer_size : buffer_size - 1);
+                    append_vector_u8(out, buffer, ctype == SQL_C_BINARY ? buffer_size : buffer_size - 1);
                 else if (ValueLenOrInd > 0)
-                    out.append(
+                    append_vector_u8(out, 
                         buffer,
                         std::min<std::size_t>(
                             ValueLenOrInd,
@@ -4337,11 +4354,7 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 // SQL_NO_DATA or SQL_SUCCESS_WITH_INFO followed by SQL_SUCCESS.
             } while (rc == SQL_SUCCESS_WITH_INFO);
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA) {
-                // for (char16_t c : out) {
-                //     std::wcout << static_cast<wchar_t>(c);
-                // }
-                // std::wcout << L"/" << column << std::endl;
-                convert(std::move(out), result);
+                convert(out, result);
             } else if (!success(rc))
                 NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
         }
@@ -4399,10 +4412,6 @@ inline void result::result_impl::get_ref_impl(short column, T& result) const
                 // SQL_NO_DATA or SQL_SUCCESS_WITH_INFO followed by SQL_SUCCESS.
             } while (rc == SQL_SUCCESS_WITH_INFO);
             if (rc == SQL_SUCCESS || rc == SQL_NO_DATA) {
-                // for (char16_t c : out) {
-                //     std::wcout << static_cast<wchar_t>(c);
-                // }
-                // std::wcout << L"/" << column << std::endl;
                 convert(std::move(out), result);
             } else if (!success(rc))
                 NANODBC_THROW_DATABASE_ERROR(stmt_.native_statement_handle(), SQL_HANDLE_STMT);
