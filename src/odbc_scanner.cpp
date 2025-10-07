@@ -633,8 +633,6 @@ void ConnectOdbcDatabase(ClientContext &context, TableFunctionInput &data, DataC
         if (!attach_data.connection_params.IsDsn() && s.rfind(conn_pfx, 0) == 0) {
             std::string numberPart = s.substr(conn_pfx.size());
             conn_idx = std::stoi(numberPart);
-    setenv("ODBCTRACE", "1", 1);
-    setenv("ODBCTRACEFILE", "/dev/fd/1", 1);
             if (conn_idx < odbc_connections.size()) {
                 odbc_connections[conn_idx]->Disconnect();
                 output.SetValue(0, 0, Value::INTEGER(1));
