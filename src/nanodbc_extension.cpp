@@ -10,41 +10,39 @@
 
 namespace duckdb {
 
-static void RegisterOdbcFunctions(DatabaseInstance &instance) {
+static void RegisterOdbcFunctions(ExtensionLoader &loader) {
     // Register each function separately to avoid copy issues
-    ExtensionUtil::RegisterFunction(instance, OdbcScanFunction());
-    ExtensionUtil::RegisterFunction(instance, OdbcAttachFunction());
-    ExtensionUtil::RegisterFunction(instance, OdbcQueryFunction());
-    ExtensionUtil::RegisterFunction(instance, OdbcExecFunction());
-    ExtensionUtil::RegisterFunction(instance, OdbcConnectFunction());
+    loader.RegisterFunction(OdbcScanFunction());
+    loader.RegisterFunction(OdbcAttachFunction());
+    loader.RegisterFunction(OdbcQueryFunction());
+    loader.RegisterFunction(OdbcExecFunction());
+    loader.RegisterFunction(OdbcConnectFunction());
 }
 
-static void LoadInternal(DatabaseInstance &instance) {
+static void LoadInternal(ExtensionLoader &loader) {
     // Register the ODBC functions
-    RegisterOdbcFunctions(instance);
+    RegisterOdbcFunctions(loader);
 
 }
 
-void NanodbcExtension::Load(DuckDB &db) {
-    LoadInternal(*db.instance);
+void NanodbcExtension::Load(ExtensionLoader &loader) {
+    LoadInternal(loader);
 }
 
 } // namespace duckdb
 
 extern "C" {
-
-// Critical: Make sure these function names exactly match what DuckDB expects
 DUCKDB_EXTENSION_API void nanodbc_init(duckdb::DatabaseInstance &db) {
-    duckdb::DuckDB db_wrapper(db);
-    db_wrapper.LoadExtension<duckdb::NanodbcExtension>();
+    static duckdb::NanodbcExtension ext;
+    duckdb::ExtensionLoader loader(db, ext.Name());
+    ext.Load(loader);
 }
-
+DUCKDB_EXTENSION_API void nanodbc_duckdb_cpp_init(duckdb::DatabaseInstance &db) {
+    static duckdb::NanodbcExtension ext;
+    duckdb::ExtensionLoader loader(db, ext.Name());
+    ext.Load(loader);
+}
 DUCKDB_EXTENSION_API const char *nanodbc_version() {
-    return duckdb::DuckDB::LibraryVersion();
+    return nanodbc_ver;
 }
-
 }
-
-#ifndef DUCKDB_EXTENSION_MAIN
-#error DUCKDB_EXTENSION_MAIN not defined
-#endif
